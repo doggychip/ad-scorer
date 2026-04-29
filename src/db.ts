@@ -2,7 +2,17 @@
 import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
+import crypto from "crypto";
 import { ScoreResult, ImageRecord, KeywordAggregation } from "./types.js";
+
+/**
+ * SHA-256 of a file's bytes, as a hex string. Used as the canonical identity
+ * of a scored image — so moving / renaming a file doesn't trigger a re-score.
+ */
+export function computeContentHash(filepath: string): string {
+  const buf = fs.readFileSync(filepath);
+  return crypto.createHash("sha256").update(buf).digest("hex");
+}
 
 export class ScoreDB {
   private db: Database.Database;
@@ -20,6 +30,8 @@ export class ScoreDB {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         filename TEXT NOT NULL,
         filepath TEXT NOT NULL,
+        content_hash TEXT,
+        scored_by_model TEXT,
         scored_at TEXT NOT NULL DEFAULT (datetime('now')),
         focal_point INTEGER NOT NULL,
         information_density INTEGER NOT NULL,
@@ -39,30 +51,72 @@ export class ScoreDB {
         raw_response TEXT,
         notes TEXT
       );
+    `);
 
+    // Add new columns to DBs that predate them. Idempotent: ignore
+    // "duplicate column" on already-migrated/freshly-created DBs.
+    for (const col of [
+      `ALTER TABLE scores ADD COLUMN content_hash TEXT`,
+      `ALTER TABLE scores ADD COLUMN scored_by_model TEXT`,
+    ]) {
+      try {
+        this.db.exec(col);
+      } catch (e: any) {
+        if (!String(e?.message || "").includes("duplicate column")) throw e;
+      }
+    }
+
+    this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_total ON scores(total DESC);
       CREATE INDEX IF NOT EXISTS idx_scored_at ON scores(scored_at DESC);
       CREATE INDEX IF NOT EXISTS idx_verdict ON scores(verdict);
       CREATE INDEX IF NOT EXISTS idx_filename ON scores(filename);
+      CREATE INDEX IF NOT EXISTS idx_content_hash ON scores(content_hash);
+      CREATE INDEX IF NOT EXISTS idx_model ON scores(scored_by_model);
+
+      CREATE TABLE IF NOT EXISTS benchmark_baselines (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        captured_at TEXT NOT NULL DEFAULT (datetime('now')),
+        rubric_version TEXT NOT NULL,
+        sample_size INTEGER NOT NULL,
+        high_avg REAL,
+        medium_avg REAL,
+        low_avg REAL,
+        gap_high_medium REAL,
+        gap_medium_low REAL,
+        notes TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_baseline_version ON benchmark_baselines(rubric_version);
+      CREATE INDEX IF NOT EXISTS idx_baseline_captured ON benchmark_baselines(captured_at DESC);
     `);
   }
 
-  insert(filename: string, filepath: string, result: ScoreResult, raw: string): number {
+  insert(
+    filename: string,
+    filepath: string,
+    contentHash: string,
+    model: string,
+    result: ScoreResult,
+    raw: string
+  ): number {
     const stmt = this.db.prepare(`
       INSERT INTO scores (
-        filename, filepath,
+        filename, filepath, content_hash, scored_by_model,
         focal_point, information_density, information_hierarchy,
         brand_consistency, differentiation, emotional_tone,
         cta_clarity, anti_ai_feel, total,
         winning_hypothesis, failure_modes_json,
         keywords_emphasize_json, keywords_remove_json,
         ip_or_legal_risk, verdict, raw_response
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `);
 
     const info = stmt.run(
       filename,
       filepath,
+      contentHash,
+      model,
       result.scores.focal_point,
       result.scores.information_density,
       result.scores.information_hierarchy,
@@ -84,10 +138,41 @@ export class ScoreDB {
     return info.lastInsertRowid as number;
   }
 
-  /** Check if a file at this path has been scored (by filepath) */
+  /**
+   * Check whether the bytes at this path have already been scored.
+   * Identity is content_hash (SHA-256), so moving/renaming a file does NOT
+   * cause a re-score.
+   */
   hasScored(filepath: string): boolean {
-    const row = this.db.prepare(`SELECT 1 FROM scores WHERE filepath = ? LIMIT 1`).get(filepath);
+    const hash = computeContentHash(filepath);
+    return this.hasScoredByHash(hash);
+  }
+
+  hasScoredByHash(contentHash: string): boolean {
+    const row = this.db
+      .prepare(`SELECT 1 FROM scores WHERE content_hash = ? LIMIT 1`)
+      .get(contentHash);
     return !!row;
+  }
+
+  /** Update the stored content_hash (and optionally filepath) for a row. */
+  setContentHash(id: number, contentHash: string, newFilepath?: string): void {
+    if (newFilepath) {
+      this.db
+        .prepare(`UPDATE scores SET content_hash = ?, filepath = ? WHERE id = ?`)
+        .run(contentHash, newFilepath, id);
+    } else {
+      this.db
+        .prepare(`UPDATE scores SET content_hash = ? WHERE id = ?`)
+        .run(contentHash, id);
+    }
+  }
+
+  /** Pull rows whose content_hash hasn't been backfilled yet. */
+  rowsMissingContentHash(): { id: number; filename: string; filepath: string }[] {
+    return this.db
+      .prepare(`SELECT id, filename, filepath FROM scores WHERE content_hash IS NULL`)
+      .all() as { id: number; filename: string; filepath: string }[];
   }
 
   getById(id: number): ImageRecord | null {

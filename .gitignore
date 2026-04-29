@@ -7,5 +7,18 @@ data/*.db-wal
 data/*.db-shm
 reports/*.html
 reports/*.csv
+reports/*.pdf
 .DS_Store
 *.log
+
+# Competitor IP — Meta/TikTok Ad Library captures. Never commit.
+creatives/benchmarks/high-quality/
+creatives/benchmarks/medium-quality/
+
+# Large per-day source PNGs from the gen pipeline (8-10MB each). Recreate
+# locally; they're not the source of truth — scores.db is.
+creatives/[0-9][0-9][0-9][0-9]-*/
+
+# Confirmed IP-infringing material — never commit
+creatives/benchmarks/low-quality/20260429-163030.jpg
+**/20260429-163030.jpg

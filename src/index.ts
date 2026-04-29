@@ -2,8 +2,9 @@
 import "dotenv/config";
 import fs from "fs";
 import path from "path";
-import { ScoreDB } from "./db.js";
+import { ScoreDB, computeContentHash } from "./db.js";
 import { Scorer } from "./scorer.js";
+import { AdType } from "./rubric.js";
 import { generateHtmlReport, generateCsv } from "./report.js";
 
 const DEFAULT_DB_PATH = process.env.DB_PATH || "./data/scores.db";
@@ -46,12 +47,20 @@ function collectImages(target: string): string[] {
 async function cmdScore(args: string[]) {
   const target = args[0];
   if (!target) {
-    console.error("Usage: score <image-or-folder> [--force] [--model <model>]");
+    console.error("Usage: score <image-or-folder> [--force] [--model <model>] [--ad-type alphawalk|benchmark]");
     process.exit(1);
   }
   const force = args.includes("--force");
   const modelIdx = args.indexOf("--model");
   const model = modelIdx >= 0 ? args[modelIdx + 1] : DEFAULT_MODEL;
+
+  const adTypeIdx = args.indexOf("--ad-type");
+  const adTypeFlag = adTypeIdx >= 0 ? args[adTypeIdx + 1] : undefined;
+  if (adTypeFlag && adTypeFlag !== "alphawalk" && adTypeFlag !== "benchmark") {
+    console.error(`✗ Invalid --ad-type "${adTypeFlag}". Use "alphawalk" or "benchmark".`);
+    process.exit(1);
+  }
+  const explicitAdType = adTypeFlag as AdType | undefined;
 
   const images = collectImages(target);
   if (images.length === 0) {
@@ -70,15 +79,19 @@ async function cmdScore(args: string[]) {
 
   for (const img of images) {
     const filename = path.basename(img);
-    if (!force && db.hasScored(img)) {
+    const hash = computeContentHash(img);
+    if (!force && db.hasScoredByHash(hash)) {
       console.log(`⊝ ${filename} (already scored — use --force to rescore)`);
       skipped++;
       continue;
     }
+    // Per-image ad type: explicit flag wins; otherwise auto-detect from path.
+    const adType: AdType =
+      explicitAdType ?? (img.includes("/benchmarks/") ? "benchmark" : "alphawalk");
     try {
-      process.stdout.write(`→ ${filename} ... `);
-      const { result, raw } = await scorer.scoreImage(img);
-      const id = db.insert(filename, img, result, raw);
+      process.stdout.write(`→ ${filename} [${adType}] ... `);
+      const { result, raw, model: usedModel } = await scorer.scoreImage(img, adType);
+      const id = db.insert(filename, img, hash, usedModel, result, raw);
       const ipFlag = result.ip_or_legal_risk ? " ⚠️ IP RISK" : "";
       console.log(
         `${result.total}/40 [${result.verdict}]${ipFlag} (id ${id})`
@@ -211,10 +224,13 @@ function printHelp() {
 Ad Scorer — automated rubric-based evaluation of ad images
 
 USAGE:
-  npm run score <image-or-folder> [--force] [--model <model>]
+  npm run score <image-or-folder> [--force] [--model <model>] [--ad-type alphawalk|benchmark]
       Score one image or all images in a folder.
       --force      rescore even if previously scored
       --model      override model (default: ${DEFAULT_MODEL})
+      --ad-type    "alphawalk" (default for normal paths) treats competitor logos as IP risk;
+                   "benchmark" treats them as expected. Auto-set to "benchmark" when the
+                   path contains /benchmarks/.
 
   npm run report [--out=<path>]
       Generate HTML report. Default: ./reports/report-YYYY-MM-DD.html

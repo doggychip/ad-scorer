@@ -1,24 +1,7 @@
 // The scoring rubric — encoded as a Claude system prompt.
+// v2 — calibrated 2026-04-29 based on first 3-image batch.
 //
-// v2.1 — validated 2026-04-29
-// Discrimination test on a 15-image benchmark sample:
-//   high tier   (n=4) avg 30.3
-//   medium tier (n=8) avg 24.6
-//   low tier    (n=3) avg 14.7
-// Distribution clean: only 1 cross-tier overlap (one high at 26 sits in
-// medium's range 21-28). Sample is small but rubric judgment matches market
-// signal (Robinhood custodial / eToro learn-copy-invest both rated 30+
-// winners; both are long-running competitor ads).
-// Snapshot pinned at src/rubric.v2.1.ts.snapshot.
-//
-// CHANGES vs v2:
-// - Added ad_type parameter ("alphawalk" | "benchmark") to disambiguate
-//   IP detection: benchmark mode no longer flags an advertiser's own logos
-//   as IP risk (was over-triggering on 11/12 competitor benchmarks in v2)
-// - Restructured IP detection into ALWAYS-IP rules (anime, public figures,
-//   Disney/etc. — flag in any mode) + mode-specific addenda
-//
-// CHANGES v2 vs v1:
+// CHANGES vs v1:
 // - Added placement_context awareness (paid_media vs organic_social vs landing_page)
 //   so mascots aren't auto-killed when they're for community/avatar use
 // - Strengthened IP detection rules with concrete IP examples (千早愛音 catch was the v1 win)

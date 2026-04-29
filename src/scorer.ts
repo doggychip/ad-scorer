@@ -3,7 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import fs from "fs";
 import path from "path";
 import { ScoreResult } from "./types.js";
-import { buildSystemPrompt, BrandContext } from "./rubric.js";
+import { buildSystemPrompt, BrandContext, AdType } from "./rubric.js";
 
 const SUPPORTED_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
 
@@ -30,7 +30,10 @@ export class Scorer {
     return SUPPORTED_EXTENSIONS.has(path.extname(filepath).toLowerCase());
   }
 
-  async scoreImage(filepath: string): Promise<{ result: ScoreResult; raw: string }> {
+  async scoreImage(
+    filepath: string,
+    adType: AdType = "alphawalk"
+  ): Promise<{ result: ScoreResult; raw: string; model: string }> {
     const ext = path.extname(filepath).toLowerCase();
     const mediaType = MEDIA_TYPE_MAP[ext];
     if (!mediaType) {
@@ -38,7 +41,7 @@ export class Scorer {
     }
 
     const imageData = fs.readFileSync(filepath).toString("base64");
-    const systemPrompt = buildSystemPrompt(this.brand);
+    const systemPrompt = buildSystemPrompt(this.brand, "paid_media", adType);
 
     const response = await this.client.messages.create({
       model: this.model,
@@ -58,35 +61,40 @@ export class Scorer {
             },
             {
               type: "text",
-              text: `Score this ad image. Output JSON only — start your response with { and end with }.`,
+              text: `Score this ad image.
+
+Respond ONLY with valid JSON matching the schema in the system prompt. Do not include any preamble, markdown fences, or explanation. Begin your response with { and end with }.`,
             },
           ],
-        },
-        // Prefill the assistant turn with `{` to lock in JSON output
-        {
-          role: "assistant",
-          content: "{",
         },
       ],
     });
 
-    // Extract text from response
     const textBlock = response.content.find((b) => b.type === "text");
     if (!textBlock || textBlock.type !== "text") {
       throw new Error("No text content in Claude response");
     }
-    // Reattach the prefilled `{`
-    const raw = "{" + textBlock.text;
+    const raw = textBlock.text;
 
-    // Parse, with cleanup for any stray markdown
     const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
     let result: ScoreResult;
     try {
       result = JSON.parse(cleaned) as ScoreResult;
-    } catch (err) {
-      throw new Error(
-        `Failed to parse Claude response as JSON: ${(err as Error).message}\n\nRaw: ${raw.slice(0, 500)}`
-      );
+    } catch {
+      // Rescue: model wrapped JSON in prose. Extract the first balanced { ... } block.
+      const match = raw.match(/\{[\s\S]*\}/);
+      if (!match) {
+        throw new Error(
+          `Failed to parse Claude response as JSON; no JSON block found.\n\nRaw: ${raw.slice(0, 500)}`
+        );
+      }
+      try {
+        result = JSON.parse(match[0]) as ScoreResult;
+      } catch (err) {
+        throw new Error(
+          `Failed to parse Claude response as JSON: ${(err as Error).message}\n\nRaw: ${raw.slice(0, 500)}`
+        );
+      }
     }
 
     // Validate + auto-correct total
@@ -95,6 +103,6 @@ export class Scorer {
       result.total = computedTotal;
     }
 
-    return { result, raw };
+    return { result, raw, model: response.model };
   }
 }

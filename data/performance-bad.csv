@@ -1,0 +1,4 @@
+ad_filename,external_ad_id,platform,date_start,date_end,impressions,clicks,spend_usd,conversions,notes
+nonexistent-001.jpg,999000001,meta,2026-05-01,2026-05-07,10000,200,30.00,5,error-path test
+nonexistent-002.jpg,999000002,meta,2026-05-01,2026-05-07,12000,180,32.00,4,error-path test
+nonexistent-003.jpg,999000003,meta,2026-05-01,2026-05-07,8000,150,25.00,3,error-path test
