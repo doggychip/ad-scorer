@@ -1,0 +1,147 @@
+{
+  "$schema": "https://alphawalk.ai/schemas/brand-dna-v1.json",
+  "version": "1.0.0",
+  "last_updated": "2026-04-29",
+  "lock_until": "2026-07-29",
+  "_comment": "Single source of truth for brand visual identity. Inject into BOTH image-gen prompts AND scorer rubric. Lock for 90 days minimum — do not edit during that window. Track which fields you wish you could change; revisit on lock_until date.",
+
+  "palette": {
+    "primary": { "hex": "#6B46C1", "name": "Royal Violet", "use": "Logo, primary CTA buttons, brand accent in scenes (e.g. monitor glow, ambient lighting on character)" },
+    "accent": { "hex": "#D4AF37", "name": "Champagne Gold", "use": "A-mark in logo, premium signal accents — restrained, never dominant" },
+    "background_primary": { "hex": "#0A0E1A", "name": "Night Navy", "use": "Default background. ALL ads dark mode. No exceptions." },
+    "background_surface": { "hex": "#1A1F35", "name": "Surface Slate", "use": "Cards, panels, secondary surfaces" },
+    "text_primary": { "hex": "#F1F5F9", "name": "Slate Off-White", "use": "Headlines (NEVER pure #FFFFFF — too harsh on dark)" },
+    "text_secondary": { "hex": "#94A3B8", "name": "Slate 400", "use": "Subheadings, captions, meta text" },
+    "data_up": { "hex": "#10B981", "name": "Emerald", "use": "Bull charts, positive deltas only — never decorative" },
+    "data_down": { "hex": "#EF4444", "name": "Red 500", "use": "Bear charts, negative deltas only — never decorative" },
+    "forbidden": [
+      "#FFFFFF (pure white background or text)",
+      "Pastel anything (pink, mint, peach)",
+      "Saturated rainbow gradients",
+      "Brown / orange backgrounds"
+    ]
+  },
+
+  "typography": {
+    "headline_family": "Inter Display, SF Pro Display, or equivalent geometric sans",
+    "headline_weight": "700-800",
+    "body_family": "Inter, SF Pro, or equivalent (same family as headline)",
+    "body_weight": "400-500",
+    "data_numbers": "Tabular figures (monospaced numerals) — non-negotiable for any chart/price overlay",
+    "forbidden": ["Serif", "Script/handwritten", "Comic Sans-adjacent", "Display fonts with personality"]
+  },
+
+  "protagonist": {
+    "archetype": "Focused young East Asian professional, mid-20s to mid-30s, gender rotating across campaigns",
+    "presentation_rules": [
+      "ALWAYS shown from back, profile, or 3/4 view — NEVER front-facing close-up",
+      "Single character per ad — no groups, no teams, no couples",
+      "Body language: focused, calm, contemplative — NEVER jumping, fist-pumping, celebrating, dancing",
+      "Wardrobe: smart casual / elevated WFH (turtleneck, blazer over tee, minimalist hoodie). Black / charcoal / cream. NO suits, NO athleisure, NO branded merch."
+    ],
+    "diversity": "Rotate gender and specific ethnicity (Japanese / Korean / Chinese / SEA features) across campaigns. Diversity within the East Asian target is the variation; do not stretch to Western faces.",
+    "forbidden": [
+      "Recognizable anime/manga IP characters (千早愛音, Genshin, Hololive, etc.)",
+      "Real public figures or celebrities",
+      "Children, elderly",
+      "Stock-photo 'diverse smiling business team'",
+      "Cartoon mascots as protagonist in PAID MEDIA ads"
+    ]
+  },
+
+  "scene_world": {
+    "primary": "Modern apartment or studio with city skyline view, evening to late night",
+    "specific_anchors": [
+      "Dual-monitor or ultrawide setup with real-looking trading UI on screen (NOT obviously fake screenshots)",
+      "MacBook Pro or equivalent premium laptop visible",
+      "Minimalist desk: 1-2 personal objects max",
+      "Lighting signature: window city lights + warm desk lamp + monitor glow. THIS is the look.",
+      "Visible city through window — Tokyo / HK / Singapore / Taipei vibe"
+    ],
+    "secondary_acceptable": [
+      "Window seat in modern coffee shop, evening, laptop open",
+      "Hotel room desk, business traveler, city view",
+      "Modern co-working space, low occupancy, late hour"
+    ],
+    "time_of_day": "Evening to late night ALWAYS. No daylight scenes.",
+    "forbidden": [
+      "Outdoor billboard scenes",
+      "Beach / vacation / resort settings",
+      "Office boardroom / cubicle farm",
+      "Lambo / private jet / money-rain imagery",
+      "Generic 'futuristic AI room' with floating holograms"
+    ]
+  },
+
+  "art_direction": {
+    "style": "Cinematic stylized illustration — Makoto Shinkai / Studio Khara color palette, painterly but not overtly anime; emphasis on light and atmosphere over character detail",
+    "photography_alternative_for_some_ads": "Premium photorealistic — Rolex/Apple ad-grade, shallow depth of field, intentional film grain. Use sparingly (≤30% of campaign mix).",
+    "lighting_rule": "Single dominant warm source (lamp or city lights) + cool monitor accent. NEVER harsh overhead studio lighting. NEVER flat lighting.",
+    "composition_rules": [
+      "Single dominant focal point — eye finds the character within 1 second",
+      "Negative space deliberate — at least 30% of canvas is 'breathing room'",
+      "Rule of thirds for character placement",
+      "Logo top-left OR watermark bottom-right — never both, never centered",
+      "Headline ≤ 8 words, subhead ≤ 12 words, single CTA"
+    ]
+  },
+
+  "tone_of_voice": {
+    "personality": ["Confident", "Calm", "Specific", "Sophisticated"],
+    "anti_personality": ["Hype", "Boastful", "Salesy", "Guru-coded"],
+    "headline_patterns_preferred": [
+      "Specific outcome: 'Spotted the NVDA breakout 48h early.'",
+      "Pain-point question: 'Tired of trading on noise?'",
+      "Calm authority: 'See what your portfolio is hiding.'"
+    ],
+    "headline_patterns_forbidden": [
+      "All-caps shouting",
+      "Multiple exclamation points",
+      "'Secret' / 'guru' / 'insider' language",
+      "Emoji in headlines",
+      "'Beat the market' / 'Get rich' phrasing"
+    ],
+    "cta_preferred": ["Start your 7-day trial", "See your portfolio's hidden risks", "Try Alphawalk free for 7 days"],
+    "cta_forbidden": ["BUY NOW", "Don't miss out", "Limited time!!!", "Click here"]
+  },
+
+  "format_specifications": {
+    "primary_aspect_ratios": ["1:1 (1080x1080)", "4:5 (1080x1350)", "9:16 (1080x1920)"],
+    "video": {
+      "primary_ratio": "9:16",
+      "duration": "6-15 seconds",
+      "must_end_with": "Logo + CTA on Night Navy (#0A0E1A) background, 1.5-2 sec hold",
+      "audio": "Ambient electronic / lo-fi instrumental — NEVER vocal, NEVER trending TikTok audio",
+      "captions": "Always present, white on semi-transparent dark"
+    }
+  },
+
+  "must_include_in_every_ad": [
+    "Alphawalk.ai logo (top-left or bottom-right watermark, never both)",
+    "Brand color present (purple element OR gold accent — at least one visible)",
+    "Single human protagonist OR pure UI/data shot",
+    "Dark mode background (#0A0E1A or close)",
+    "ONE clear CTA"
+  ],
+
+  "must_exclude_from_every_ad": [
+    "Split-screen 'good vs bad' comparisons",
+    "Billboard or signage collages",
+    "Jumping, fist-pumping, dancing, or hyper-excited people",
+    "Stock-photo 'happy diverse business team' tropes",
+    "Real public figures, celebrities, or recognizable IP characters",
+    "Cartoon/mascot characters (in paid media)",
+    "Comic book speech bubbles or thought clouds",
+    "Wealth-fantasy imagery (Lamborghini, money rain, gold bars, private jets)",
+    "Feature lists overlaid on image",
+    "More than 8 words in headline, more than 12 words in subhead",
+    "Pure white (#FFFFFF) backgrounds",
+    "Daylight outdoor scenes"
+  ],
+
+  "campaign_consistency_rules": {
+    "min_ads_per_lock_period": 60,
+    "min_days_between_dna_changes": 90,
+    "_rationale": "Brand recognition compounds with repetition. Lock the DNA, vary only message and moment within the locked aesthetic."
+  }
+}

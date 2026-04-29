@@ -1,0 +1,27 @@
+{
+  "name": "ad-scorer",
+  "version": "0.1.0",
+  "description": "Alphawalk.ai ad image scorer — automated rubric-based evaluation using Claude vision",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "score": "tsx src/index.ts score",
+    "report": "tsx src/index.ts report",
+    "winners": "tsx src/index.ts winners",
+    "losers": "tsx src/index.ts losers",
+    "stats": "tsx src/index.ts stats",
+    "export": "tsx src/index.ts export",
+    "keywords": "tsx src/index.ts keywords"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
+    "better-sqlite3": "^11.5.0",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^22.9.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "command": ".claude/hooks/inject-brand-dna.sh",
+        "description": "Auto-inject brand-dna reminder when user asks to generate ad prompts"
+      }
+    ]
+  }
+}
