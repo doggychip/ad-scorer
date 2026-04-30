@@ -227,10 +227,14 @@ export class ScoreDB {
   }
 
   /** Aggregate keyword feedback across all scored ads — the core feedback loop */
-  aggregateKeywords(): KeywordAggregation[] {
-    const rows = this.db
-      .prepare(`SELECT keywords_emphasize_json, keywords_remove_json, total FROM scores`)
-      .all() as { keywords_emphasize_json: string; keywords_remove_json: string; total: number }[];
+  aggregateKeywords(filterPathSubstring?: string): KeywordAggregation[] {
+    const sql = filterPathSubstring
+      ? `SELECT keywords_emphasize_json, keywords_remove_json, total FROM scores WHERE filepath LIKE ?`
+      : `SELECT keywords_emphasize_json, keywords_remove_json, total FROM scores`;
+    const stmt = this.db.prepare(sql);
+    const rows = (filterPathSubstring
+      ? stmt.all(`%${filterPathSubstring}%`)
+      : stmt.all()) as { keywords_emphasize_json: string; keywords_remove_json: string; total: number }[];
 
     const map = new Map<
       string,

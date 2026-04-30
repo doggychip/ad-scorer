@@ -113,15 +113,25 @@ async function cmdReport(args: string[]) {
     ? outArg.replace("--out=", "")
     : `./reports/report-${new Date().toISOString().split("T")[0]}.html`;
 
+  const filterArg = args.find((a) => a.startsWith("--filter-path="));
+  const filterPath = filterArg ? filterArg.replace("--filter-path=", "") : undefined;
+
   const db = new ScoreDB(DEFAULT_DB_PATH);
-  const records = db.getAll();
-  const keywords = db.aggregateKeywords();
+  const all = db.getAll();
+  const records = filterPath ? all.filter((r) => r.filepath.includes(filterPath)) : all;
+  const keywords = db.aggregateKeywords(filterPath);
   if (records.length === 0) {
-    console.error("✗ No scored images. Run `score` first.");
+    console.error(
+      filterPath
+        ? `✗ No scored images match --filter-path=${filterPath}.`
+        : "✗ No scored images. Run `score` first."
+    );
     process.exit(1);
   }
   generateHtmlReport(records, keywords, outPath);
-  console.log(`✓ Report written to ${outPath}`);
+  console.log(
+    `✓ Report written to ${outPath} (${records.length} rows${filterPath ? `, filter: ${filterPath}` : ""})`
+  );
   console.log(`  Open with: open ${outPath}`);
   db.close();
 }
@@ -232,8 +242,10 @@ USAGE:
                    "benchmark" treats them as expected. Auto-set to "benchmark" when the
                    path contains /benchmarks/.
 
-  npm run report [--out=<path>]
+  npm run report [--out=<path>] [--filter-path=<substring>]
       Generate HTML report. Default: ./reports/report-YYYY-MM-DD.html
+      --filter-path  scope report to records whose filepath contains the substring
+                     (e.g. --filter-path=competitor-monitoring/interactive-brokers/2026-04-30)
 
   npm run winners [N]            Top N ads (default 10)
   npm run losers [N]             Bottom N ads (default 10)
