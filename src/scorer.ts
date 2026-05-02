@@ -105,4 +105,28 @@ Respond ONLY with valid JSON matching the schema in the system prompt. Do not in
 
     return { result, raw, model: response.model };
   }
+
+  /**
+   * Score one image N times in parallel. Returns the successful runs and any
+   * errors. Caller decides whether to write to DB based on success count.
+   */
+  async scoreImageMultiShot(
+    filepath: string,
+    adType: AdType,
+    n: number
+  ): Promise<{
+    runs: { result: ScoreResult; raw: string; model: string }[];
+    errors: Error[];
+  }> {
+    const settled = await Promise.allSettled(
+      Array.from({ length: n }, () => this.scoreImage(filepath, adType))
+    );
+    const runs: { result: ScoreResult; raw: string; model: string }[] = [];
+    const errors: Error[] = [];
+    for (const s of settled) {
+      if (s.status === "fulfilled") runs.push(s.value);
+      else errors.push(s.reason as Error);
+    }
+    return { runs, errors };
+  }
 }
