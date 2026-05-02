@@ -291,9 +291,11 @@ function printHelp() {
 Ad Scorer — automated rubric-based evaluation of ad images
 
 USAGE:
-  npm run score <image-or-folder> [--force] [--model <model>] [--ad-type alphawalk|benchmark]
-      Score one image or all images in a folder.
-      --force      rescore even if previously scored
+  npm run score <image-or-folder> [--runs N] [--force] [--model <model>] [--ad-type alphawalk|benchmark]
+      Score image(s) with N parallel Claude vision calls per image (default N=3).
+      Aggregates via median; flags batches with std > 2.0 as "⚠️ unstable".
+      --runs N     number of runs per image; 1 = cheap single-shot mode (default 3)
+      --force      rescore even if previously scored (creates a new batch)
       --model      override model (default: ${DEFAULT_MODEL})
       --ad-type    "alphawalk" (default for normal paths) treats competitor logos as IP risk;
                    "benchmark" treats them as expected. Auto-set to "benchmark" when the
@@ -306,8 +308,8 @@ USAGE:
 
   npm run winners [N]            Top N ads (default 10)
   npm run losers [N]             Bottom N ads (default 10)
-  npm run stats                  Aggregate statistics
-  npm run keywords [N]           Top N keyword feedback (default 20)
+  npm run stats                  Aggregate statistics (shows "Total aggregated batches")
+  npm run keywords [N]           Top N keyword feedback (default 20; counts are per scoring run)
   npm run export [--out=<path>]  Export all scores to CSV
 
 EXAMPLES:
@@ -315,6 +317,9 @@ EXAMPLES:
   npm run score ./creatives/draft-v3.png --force
   npm run report
   npm run keywords 30
+  npm run score ./creatives/2026-05-02/                   # default N=3
+  npm run score ./creatives/2026-05-02/ -- --runs 1       # cheap probe
+  npm run score ./creatives/draft.png -- --runs 5 --force # high-stakes review
 `);
 }
 
