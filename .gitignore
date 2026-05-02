@@ -22,3 +22,9 @@ creatives/[0-9][0-9][0-9][0-9]-*/
 # Confirmed IP-infringing material — never commit
 creatives/benchmarks/low-quality/20260429-163030.jpg
 **/20260429-163030.jpg
+
+# Git worktrees for parallel feature work
+.worktrees/
+
+# Competitor monitoring captures — same "Never commit" rule as benchmarks/
+creatives/benchmarks/competitor-monitoring/
