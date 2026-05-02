@@ -58,6 +58,8 @@ export class ScoreDB {
     for (const col of [
       `ALTER TABLE scores ADD COLUMN content_hash TEXT`,
       `ALTER TABLE scores ADD COLUMN scored_by_model TEXT`,
+      `ALTER TABLE scores ADD COLUMN batch_id TEXT`,
+      `ALTER TABLE scores ADD COLUMN run_index INTEGER`,
     ]) {
       try {
         this.db.exec(col);
@@ -66,6 +68,14 @@ export class ScoreDB {
       }
     }
 
+    // Backfill legacy rows: each becomes a "size-1 batch" tagged legacy-{id}.
+    // Idempotent — only touches rows where batch_id is still NULL.
+    this.db.exec(`
+      UPDATE scores
+      SET batch_id = 'legacy-' || id, run_index = 0
+      WHERE batch_id IS NULL;
+    `);
+
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_total ON scores(total DESC);
       CREATE INDEX IF NOT EXISTS idx_scored_at ON scores(scored_at DESC);
@@ -73,6 +83,7 @@ export class ScoreDB {
       CREATE INDEX IF NOT EXISTS idx_filename ON scores(filename);
       CREATE INDEX IF NOT EXISTS idx_content_hash ON scores(content_hash);
       CREATE INDEX IF NOT EXISTS idx_model ON scores(scored_by_model);
+      CREATE INDEX IF NOT EXISTS idx_batch_id ON scores(batch_id);
 
       CREATE TABLE IF NOT EXISTS benchmark_baselines (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
