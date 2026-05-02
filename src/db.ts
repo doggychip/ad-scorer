@@ -4,6 +4,7 @@ import path from "path";
 import fs from "fs";
 import crypto from "crypto";
 import { ScoreResult, ImageRecord, KeywordAggregation } from "./types.js";
+import { aggregateBatch } from "./aggregate.js";
 
 /**
  * SHA-256 of a file's bytes, as a hex string. Used as the canonical identity
@@ -299,6 +300,72 @@ export class ScoreDB {
     }
     result.sort((a, b) => b.net_score - a.net_score);
     return result;
+  }
+
+  private rowToRawRun(row: any): import("./types.js").RawRunRow {
+    return {
+      id: row.id,
+      filename: row.filename,
+      filepath: row.filepath,
+      scored_at: row.scored_at,
+      batch_id: row.batch_id,
+      run_index: row.run_index ?? 0,
+      result: {
+        scores: {
+          focal_point: row.focal_point,
+          information_density: row.information_density,
+          information_hierarchy: row.information_hierarchy,
+          brand_consistency: row.brand_consistency,
+          differentiation: row.differentiation,
+          emotional_tone: row.emotional_tone,
+          cta_clarity: row.cta_clarity,
+          anti_ai_feel: row.anti_ai_feel,
+        },
+        total: row.total,
+        winning_hypothesis: row.winning_hypothesis ?? "",
+        failure_modes: JSON.parse(row.failure_modes_json || "[]"),
+        suggested_keywords_to_emphasize: JSON.parse(
+          row.keywords_emphasize_json || "[]"
+        ),
+        suggested_keywords_to_remove: JSON.parse(
+          row.keywords_remove_json || "[]"
+        ),
+        ip_or_legal_risk: row.ip_or_legal_risk,
+        verdict: row.verdict,
+      },
+    };
+  }
+
+  /**
+   * Pull all rows (optionally filtered by filepath substring), group by
+   * batch_id, and return one AggregatedRecord per batch.
+   */
+  getAggregatedRecords(
+    filterPathSubstring?: string
+  ): import("./types.js").AggregatedRecord[] {
+    const sql = filterPathSubstring
+      ? `SELECT * FROM scores WHERE filepath LIKE ? ORDER BY batch_id, run_index`
+      : `SELECT * FROM scores ORDER BY batch_id, run_index`;
+    const stmt = this.db.prepare(sql);
+    const rows = (filterPathSubstring
+      ? stmt.all(`%${filterPathSubstring}%`)
+      : stmt.all()) as any[];
+
+    const byBatch = new Map<string, import("./types.js").RawRunRow[]>();
+    for (const row of rows) {
+      const raw = this.rowToRawRun(row);
+      const arr = byBatch.get(raw.batch_id) || [];
+      arr.push(raw);
+      byBatch.set(raw.batch_id, arr);
+    }
+
+    const out: import("./types.js").AggregatedRecord[] = [];
+    for (const runs of byBatch.values()) {
+      out.push(aggregateBatch(runs));
+    }
+    // Sort by total descending — matches existing report sort.
+    out.sort((a, b) => b.result.total - a.result.total);
+    return out;
   }
 
   private rowToRecord(row: any): ImageRecord {
