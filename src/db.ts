@@ -103,24 +103,27 @@ export class ScoreDB {
     `);
   }
 
-  insert(
+  insertRun(
     filename: string,
     filepath: string,
     contentHash: string,
     model: string,
+    batchId: string,
+    runIndex: number,
     result: ScoreResult,
     raw: string
   ): number {
     const stmt = this.db.prepare(`
       INSERT INTO scores (
         filename, filepath, content_hash, scored_by_model,
+        batch_id, run_index,
         focal_point, information_density, information_hierarchy,
         brand_consistency, differentiation, emotional_tone,
         cta_clarity, anti_ai_feel, total,
         winning_hypothesis, failure_modes_json,
         keywords_emphasize_json, keywords_remove_json,
         ip_or_legal_risk, verdict, raw_response
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `);
 
     const info = stmt.run(
@@ -128,6 +131,8 @@ export class ScoreDB {
       filepath,
       contentHash,
       model,
+      batchId,
+      runIndex,
       result.scores.focal_point,
       result.scores.information_density,
       result.scores.information_hierarchy,
