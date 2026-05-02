@@ -1,4 +1,4 @@
-import { AggregatedRecord, RawRunRow, RubricScores, Verdict } from "./types.js";
+import { AggregatedRecord, RawRunRow, RubricScores, Stability, Verdict } from "./types.js";
 
 const STABILITY_STD_THRESHOLD = 2.0;
 
@@ -105,4 +105,21 @@ export function aggregateBatch(runs: RawRunRow[]): AggregatedRecord {
       verdict: verdictFromTotal(medianTotal),
     },
   };
+}
+
+const STABILITY_LABEL_ZH: Record<Stability, string> = {
+  stable: "稳定",
+  unstable: "⚠️ 不稳定",
+  "single-shot": "单次",
+};
+
+const STABILITY_LABEL_EN: Record<Stability, string> = {
+  stable: "stable",
+  unstable: "⚠️unstable",
+  "single-shot": "single-shot",
+};
+
+/** Stability badge text. `locale` controls Chinese (default for reports/CLI display) vs English (live-progress in cmdScore). */
+export function formatStability(s: Stability, locale: "zh" | "en" = "zh"): string {
+  return locale === "en" ? STABILITY_LABEL_EN[s] : STABILITY_LABEL_ZH[s];
 }

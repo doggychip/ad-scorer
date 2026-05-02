@@ -1,12 +1,19 @@
 // HTML report + CSV export
 import fs from "fs";
 import path from "path";
-import { ImageRecord, KeywordAggregation } from "./types.js";
+import { AggregatedRecord, ImageRecord, KeywordAggregation } from "./types.js";
+import { formatStability } from "./aggregate.js";
 
 const VERDICT_COLOR: Record<string, string> = {
   winner: "#10b981",
   candidate: "#f59e0b",
   reject: "#ef4444",
+};
+
+const STABILITY_COLOR: Record<string, string> = {
+  stable: "#10b981",
+  unstable: "#f59e0b",
+  "single-shot": "#6b7280",
 };
 
 function imageToDataUri(filepath: string): string | null {
@@ -22,7 +29,7 @@ function imageToDataUri(filepath: string): string | null {
 }
 
 export function generateHtmlReport(
-  records: ImageRecord[],
+  records: AggregatedRecord[],
   keywords: KeywordAggregation[],
   outputPath: string
 ) {
@@ -52,7 +59,8 @@ export function generateHtmlReport(
           <div class="card-body">
             <div class="card-header">
               <span class="filename">${escapeHtml(r.filename)}</span>
-              <span class="total" style="background:${verdictColor}">${r.result.total}/40 · ${r.result.verdict}</span>
+              <span class="total" style="background:${verdictColor}">${r.result.total}${r.std_total !== null ? `±${r.std_total.toFixed(1)}` : ""}/40 · ${r.result.verdict}</span>
+              <span class="stability" style="background:${STABILITY_COLOR[r.stability]}">${formatStability(r.stability)}</span>
             </div>
             ${ipBadge}
             <div class="scores">${scoreBars}</div>
@@ -109,6 +117,7 @@ export function generateHtmlReport(
   .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 8px; }
   .filename { font-weight: 600; font-size: 14px; word-break: break-all; }
   .total { color: white; padding: 4px 10px; border-radius: 6px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+  .stability { color: white; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; white-space: nowrap; margin-left: 4px; }
   .ip-risk { background: #7f1d1d; color: #fecaca; padding: 8px; border-radius: 6px; margin-bottom: 12px; font-size: 13px; }
   .scores { margin-bottom: 12px; }
   .score-row { display: grid; grid-template-columns: 160px 1fr 50px; gap: 8px; align-items: center; margin-bottom: 4px; font-size: 12px; }
@@ -141,6 +150,7 @@ export function generateHtmlReport(
     <div class="stat"><div class="stat-label">Candidates</div><div class="stat-value" style="color:#f59e0b">${records.filter((r) => r.result.verdict === "candidate").length}</div></div>
     <div class="stat"><div class="stat-label">Rejects</div><div class="stat-value" style="color:#ef4444">${records.filter((r) => r.result.verdict === "reject").length}</div></div>
     <div class="stat"><div class="stat-label">IP risks flagged</div><div class="stat-value" style="color:#ef4444">${records.filter((r) => r.result.ip_or_legal_risk).length}</div></div>
+    <div class="stat"><div class="stat-label">不稳定</div><div class="stat-value" style="color:#f59e0b">${records.filter((r) => r.stability === "unstable").length}</div></div>
     <div class="stat"><div class="stat-label">Avg score</div><div class="stat-value">${records.length ? (records.reduce((s, r) => s + r.result.total, 0) / records.length).toFixed(1) : "—"}/40</div></div>
   </div>
 

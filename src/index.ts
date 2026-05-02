@@ -6,6 +6,7 @@ import { ScoreDB, computeContentHash } from "./db.js";
 import { Scorer } from "./scorer.js";
 import { AdType } from "./rubric.js";
 import { generateHtmlReport, generateCsv } from "./report.js";
+import { formatStability } from "./aggregate.js";
 
 const DEFAULT_DB_PATH = process.env.DB_PATH || "./data/scores.db";
 const DEFAULT_MODEL = process.env.SCORER_MODEL || "claude-sonnet-4-6";
@@ -132,12 +133,7 @@ async function cmdScore(args: string[]) {
 
     const agg = aggregateBatch(rawRuns);
     const stdStr = agg.std_total !== null ? `±${agg.std_total.toFixed(1)}` : "";
-    const stabilityTag =
-      agg.stability === "single-shot"
-        ? "single-shot"
-        : agg.stability === "unstable"
-        ? "⚠️unstable"
-        : "stable";
+    const stabilityTag = formatStability(agg.stability, "en");
     const ipFlag = agg.result.ip_or_legal_risk ? " ⚠️ IP RISK" : "";
     console.log(
       `${agg.result.total}${stdStr}/40 [${agg.result.verdict}, ${stabilityTag}]${ipFlag} (batch ${batchId.slice(0, 6)}, ${results.length} runs)`
@@ -185,8 +181,7 @@ async function cmdWinners(args: string[]) {
   console.log(`\nTop ${n} ads by score:\n`);
   for (const r of winners) {
     const stdStr = r.std_total !== null ? `±${r.std_total.toFixed(1)}` : "";
-    const stabilityTag =
-      r.stability === "single-shot" ? "单次" : r.stability === "unstable" ? "⚠️不稳定" : "稳定";
+    const stabilityTag = formatStability(r.stability);
     console.log(
       `  ${r.result.total}${stdStr}/40 [${r.result.verdict.padEnd(9)}, ${stabilityTag}] ${r.filename}`
     );
@@ -203,8 +198,7 @@ async function cmdLosers(args: string[]) {
   console.log(`\nBottom ${n} ads by score:\n`);
   for (const r of losers) {
     const stdStr = r.std_total !== null ? `±${r.std_total.toFixed(1)}` : "";
-    const stabilityTag =
-      r.stability === "single-shot" ? "单次" : r.stability === "unstable" ? "⚠️不稳定" : "稳定";
+    const stabilityTag = formatStability(r.stability);
     const ipBadge = r.result.ip_or_legal_risk ? " ⚠️" : "";
     console.log(
       `  ${r.result.total}${stdStr}/40 [${r.result.verdict.padEnd(9)}, ${stabilityTag}]${ipBadge} ${r.filename}`
