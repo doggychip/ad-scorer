@@ -115,17 +115,19 @@ async function cmdScore(args: string[]) {
     }
 
     const batchId = randomUUID();
-    const rawRuns = results.map((r, i) => {
-      const id = db.insertRun(filename, img, hash, r.model, batchId, i, r.result, r.raw);
-      return {
-        id,
-        filename,
-        filepath: img,
-        scored_at: "",
-        batch_id: batchId,
-        run_index: i,
-        result: r.result,
-      };
+    const rawRuns = db.transaction(() => {
+      return results.map((r, i) => {
+        const id = db.insertRun(filename, img, hash, model, batchId, i, r.result, r.raw);
+        return {
+          id,
+          filename,
+          filepath: img,
+          scored_at: "",
+          batch_id: batchId,
+          run_index: i,
+          result: r.result,
+        };
+      });
     });
 
     const agg = aggregateBatch(rawRuns);

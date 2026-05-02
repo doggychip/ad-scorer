@@ -155,6 +155,11 @@ export class ScoreDB {
     return info.lastInsertRowid as number;
   }
 
+  /** Execute fn inside a single SQLite transaction. fn must be synchronous. */
+  transaction<T>(fn: () => T): T {
+    return this.db.transaction(fn)();
+  }
+
   /**
    * Check whether the bytes at this path have already been scored.
    * Identity is content_hash (SHA-256), so moving/renaming a file does NOT
