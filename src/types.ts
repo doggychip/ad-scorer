@@ -39,3 +39,32 @@ export interface KeywordAggregation {
   net_score: number;         // emphasize - remove
   avg_total_when_present: number; // average rubric score for ads where this appeared
 }
+
+export type Stability = "stable" | "unstable" | "single-shot";
+
+/** A representative record summarizing one batch (one image's N runs). */
+export interface AggregatedRecord {
+  /** id of the representative run (the row whose total is closest to the median). */
+  id: number;
+  filename: string;
+  filepath: string;
+  scored_at: string;
+  /** Aggregated scores: per-dimension median, total = median of run totals. */
+  result: ScoreResult;
+  /** Standard deviation of the N totals. null when batch_size === 1. */
+  std_total: number | null;
+  batch_id: string;
+  batch_size: number;
+  stability: Stability;
+}
+
+/** Shape of a single raw row used as input to aggregation. */
+export interface RawRunRow {
+  id: number;
+  filename: string;
+  filepath: string;
+  scored_at: string;
+  batch_id: string;
+  run_index: number;
+  result: ScoreResult;
+}
