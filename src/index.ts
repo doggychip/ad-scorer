@@ -159,8 +159,7 @@ async function cmdReport(args: string[]) {
   const filterPath = filterArg ? filterArg.replace("--filter-path=", "") : undefined;
 
   const db = new ScoreDB(DEFAULT_DB_PATH);
-  const all = db.getAll();
-  const records = filterPath ? all.filter((r) => r.filepath.includes(filterPath)) : all;
+  const records = db.getAggregatedRecords(filterPath);
   const keywords = db.aggregateKeywords(filterPath);
   if (records.length === 0) {
     console.error(
@@ -181,11 +180,15 @@ async function cmdReport(args: string[]) {
 async function cmdWinners(args: string[]) {
   const n = parseInt(args[0] || "10", 10);
   const db = new ScoreDB(DEFAULT_DB_PATH);
-  const winners = db.getTopN(n);
+  const all = db.getAggregatedRecords();
+  const winners = all.slice(0, n); // already sorted by total desc
   console.log(`\nTop ${n} ads by score:\n`);
   for (const r of winners) {
+    const stdStr = r.std_total !== null ? `±${r.std_total.toFixed(1)}` : "";
+    const stabilityTag =
+      r.stability === "single-shot" ? "单次" : r.stability === "unstable" ? "⚠️不稳定" : "稳定";
     console.log(
-      `  ${r.result.total}/40 [${r.result.verdict.padEnd(9)}] ${r.filename}`
+      `  ${r.result.total}${stdStr}/40 [${r.result.verdict.padEnd(9)}, ${stabilityTag}] ${r.filename}`
     );
     console.log(`    → ${r.result.winning_hypothesis}`);
   }
@@ -195,12 +198,16 @@ async function cmdWinners(args: string[]) {
 async function cmdLosers(args: string[]) {
   const n = parseInt(args[0] || "10", 10);
   const db = new ScoreDB(DEFAULT_DB_PATH);
-  const losers = db.getBottomN(n);
+  const all = db.getAggregatedRecords();
+  const losers = all.slice(-n).reverse(); // worst first
   console.log(`\nBottom ${n} ads by score:\n`);
   for (const r of losers) {
-    const ip = r.result.ip_or_legal_risk ? " ⚠️" : "";
+    const stdStr = r.std_total !== null ? `±${r.std_total.toFixed(1)}` : "";
+    const stabilityTag =
+      r.stability === "single-shot" ? "单次" : r.stability === "unstable" ? "⚠️不稳定" : "稳定";
+    const ipBadge = r.result.ip_or_legal_risk ? " ⚠️" : "";
     console.log(
-      `  ${r.result.total}/40 [${r.result.verdict.padEnd(9)}]${ip} ${r.filename}`
+      `  ${r.result.total}${stdStr}/40 [${r.result.verdict.padEnd(9)}, ${stabilityTag}]${ipBadge} ${r.filename}`
     );
     if (r.result.failure_modes.length) {
       console.log(`    ✗ ${r.result.failure_modes.join("; ")}`);
@@ -211,28 +218,42 @@ async function cmdLosers(args: string[]) {
 
 async function cmdStats() {
   const db = new ScoreDB(DEFAULT_DB_PATH);
-  const stats = db.getStats();
-  console.log(`\nTotal scored: ${stats.total}`);
-  if (stats.total === 0) {
-    db.close();
-    return;
+  const records = db.getAggregatedRecords();
+  const verdictCounts = { winner: 0, candidate: 0, reject: 0 };
+  const stabilityCounts = { stable: 0, unstable: 0, "single-shot": 0 };
+  let ipFlagged = 0;
+  let totalSum = 0;
+  const dimSums = {
+    focal_point: 0,
+    information_density: 0,
+    information_hierarchy: 0,
+    brand_consistency: 0,
+    differentiation: 0,
+    emotional_tone: 0,
+    cta_clarity: 0,
+    anti_ai_feel: 0,
+  };
+  for (const r of records) {
+    verdictCounts[r.result.verdict]++;
+    stabilityCounts[r.stability]++;
+    if (r.result.ip_or_legal_risk) ipFlagged++;
+    totalSum += r.result.total;
+    for (const k of Object.keys(dimSums) as (keyof typeof dimSums)[]) {
+      dimSums[k] += r.result.scores[k];
+    }
   }
-  console.log(`IP risk flagged: ${stats.ipRiskCount}`);
+  const n = records.length || 1;
+  console.log(`\nTotal aggregated batches: ${records.length}`);
+  console.log(`IP risk flagged: ${ipFlagged}`);
   console.log(`\nVerdict breakdown:`);
-  for (const v of stats.verdictCounts) {
-    console.log(`  ${v.verdict.padEnd(10)} ${v.n}`);
+  for (const [v, c] of Object.entries(verdictCounts)) console.log(`  ${v.padEnd(10)} ${c}`);
+  console.log(`\nStability breakdown:`);
+  for (const [s, c] of Object.entries(stabilityCounts)) console.log(`  ${s.padEnd(12)} ${c}`);
+  console.log(`\nAverage scores (across batches):`);
+  console.log(`  total              ${(totalSum / n).toFixed(2)} / 40`);
+  for (const [k, sum] of Object.entries(dimSums)) {
+    console.log(`  ${k.padEnd(18)} ${(sum / n).toFixed(2)} / 5`);
   }
-  console.log(`\nAverage scores:`);
-  const a = stats.averages;
-  console.log(`  total              ${a.avg_total.toFixed(2)} / 40`);
-  console.log(`  focal_point        ${a.avg_focal.toFixed(2)} / 5`);
-  console.log(`  info_density       ${a.avg_density.toFixed(2)} / 5`);
-  console.log(`  info_hierarchy     ${a.avg_hierarchy.toFixed(2)} / 5`);
-  console.log(`  brand_consistency  ${a.avg_brand.toFixed(2)} / 5`);
-  console.log(`  differentiation    ${a.avg_diff.toFixed(2)} / 5`);
-  console.log(`  emotional_tone     ${a.avg_emotion.toFixed(2)} / 5`);
-  console.log(`  cta_clarity        ${a.avg_cta.toFixed(2)} / 5`);
-  console.log(`  anti_ai_feel       ${a.avg_antiai.toFixed(2)} / 5`);
   db.close();
 }
 
