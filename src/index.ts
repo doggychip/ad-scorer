@@ -47,12 +47,22 @@ function collectImages(target: string): string[] {
 async function cmdScore(args: string[]) {
   const target = args[0];
   if (!target) {
-    console.error("Usage: score <image-or-folder> [--force] [--model <model>] [--ad-type alphawalk|benchmark]");
+    console.error(
+      "Usage: score <image-or-folder> [--runs N] [--force] [--model <model>] [--ad-type alphawalk|benchmark]"
+    );
     process.exit(1);
   }
   const force = args.includes("--force");
   const modelIdx = args.indexOf("--model");
   const model = modelIdx >= 0 ? args[modelIdx + 1] : DEFAULT_MODEL;
+
+  const runsIdx = args.indexOf("--runs");
+  const runsArg = runsIdx >= 0 ? parseInt(args[runsIdx + 1], 10) : 3;
+  if (!Number.isInteger(runsArg) || runsArg < 1 || runsArg > 10) {
+    console.error(`✗ Invalid --runs "${args[runsIdx + 1]}". Use an integer 1-10.`);
+    process.exit(1);
+  }
+  const runs = runsArg;
 
   const adTypeIdx = args.indexOf("--ad-type");
   const adTypeFlag = adTypeIdx >= 0 ? args[adTypeIdx + 1] : undefined;
@@ -68,10 +78,12 @@ async function cmdScore(args: string[]) {
     process.exit(1);
   }
 
-  console.log(`Found ${images.length} image(s). Model: ${model}\n`);
+  console.log(`Found ${images.length} image(s). Model: ${model}, runs/image: ${runs}\n`);
 
   const db = new ScoreDB(DEFAULT_DB_PATH);
   const scorer = new Scorer(getApiKey(), model, getBrand());
+  const { aggregateBatch } = await import("./aggregate.js");
+  const { randomUUID } = await import("crypto");
 
   let scored = 0;
   let skipped = 0;
@@ -80,27 +92,55 @@ async function cmdScore(args: string[]) {
   for (const img of images) {
     const filename = path.basename(img);
     const hash = computeContentHash(img);
-    if (!force && db.hasScoredByHash(hash)) {
+    if (!force && db.hasBatchByHash(hash, model)) {
       console.log(`⊝ ${filename} (already scored — use --force to rescore)`);
       skipped++;
       continue;
     }
-    // Per-image ad type: explicit flag wins; otherwise auto-detect from path.
     const adType: AdType =
       explicitAdType ?? (img.includes("/benchmarks/") ? "benchmark" : "alphawalk");
-    try {
-      process.stdout.write(`→ ${filename} [${adType}] ... `);
-      const { result, raw, model: usedModel } = await scorer.scoreImage(img, adType);
-      const id = db.insert(filename, img, hash, usedModel, result, raw);
-      const ipFlag = result.ip_or_legal_risk ? " ⚠️ IP RISK" : "";
-      console.log(
-        `${result.total}/40 [${result.verdict}]${ipFlag} (id ${id})`
-      );
-      scored++;
-    } catch (err) {
-      console.log(`FAILED: ${(err as Error).message}`);
+
+    process.stdout.write(`→ ${filename} [${adType}] runs=${runs} ... `);
+    const { runs: results, errors } = await scorer.scoreImageMultiShot(img, adType, runs);
+
+    if (results.length < 2 && runs >= 2) {
+      console.log(`FAILED: only ${results.length}/${runs} runs succeeded; need ≥2. First error: ${errors[0]?.message ?? "n/a"}`);
       failed++;
+      continue;
     }
+    if (results.length === 0) {
+      console.log(`FAILED: 0/${runs} runs succeeded. First error: ${errors[0]?.message ?? "n/a"}`);
+      failed++;
+      continue;
+    }
+
+    const batchId = randomUUID();
+    const rawRuns = results.map((r, i) => {
+      const id = db.insertRun(filename, img, hash, r.model, batchId, i, r.result, r.raw);
+      return {
+        id,
+        filename,
+        filepath: img,
+        scored_at: "",
+        batch_id: batchId,
+        run_index: i,
+        result: r.result,
+      };
+    });
+
+    const agg = aggregateBatch(rawRuns);
+    const stdStr = agg.std_total !== null ? `±${agg.std_total.toFixed(1)}` : "";
+    const stabilityTag =
+      agg.stability === "single-shot"
+        ? "single-shot"
+        : agg.stability === "unstable"
+        ? "⚠️unstable"
+        : "stable";
+    const ipFlag = agg.result.ip_or_legal_risk ? " ⚠️ IP RISK" : "";
+    console.log(
+      `${agg.result.total}${stdStr}/40 [${agg.result.verdict}, ${stabilityTag}]${ipFlag} (batch ${batchId.slice(0, 6)}, ${results.length} runs)`
+    );
+    scored++;
   }
 
   console.log(`\n✓ Done. Scored ${scored}, skipped ${skipped}, failed ${failed}.`);
