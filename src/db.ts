@@ -171,6 +171,20 @@ export class ScoreDB {
     return !!row;
   }
 
+  /**
+   * True iff at least one row exists for this content_hash + model combo.
+   * Counts legacy single-shot batches as "already scored" — matching the
+   * non-goal of auto-rescoring legacy data.
+   */
+  hasBatchByHash(contentHash: string, model: string): boolean {
+    const row = this.db
+      .prepare(
+        `SELECT 1 FROM scores WHERE content_hash = ? AND scored_by_model = ? LIMIT 1`
+      )
+      .get(contentHash, model);
+    return !!row;
+  }
+
   /** Update the stored content_hash (and optionally filepath) for a row. */
   setContentHash(id: number, contentHash: string, newFilepath?: string): void {
     if (newFilepath) {
