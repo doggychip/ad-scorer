@@ -34,6 +34,12 @@ interface CsvRow {
   notes?: string;
 }
 
+function normalizePlatform(s: string): "meta" | "tiktok" | "google" | "other" {
+  const lower = s.toLowerCase();
+  if (lower === "meta" || lower === "tiktok" || lower === "google") return lower;
+  return "other";
+}
+
 function parseCsv(content: string): CsvRow[] {
   const lines = content.trim().split(/\r?\n/);
   if (lines.length < 2) throw new Error("CSV needs at least a header row + 1 data row");
@@ -133,7 +139,7 @@ function importCsv(csvPath: string): { inserted: number; skipped: number; errors
     perfDb.insert({
       ad_id: match.id,
       external_ad_id: row.external_ad_id,
-      platform: row.platform.toLowerCase(),
+      platform: normalizePlatform(row.platform),
       campaign: row.notes || "",
       date_range_start: row.date_start,
       date_range_end: row.date_end,
