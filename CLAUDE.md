@@ -80,6 +80,7 @@ Drop competitor ads into `./competitors/{brand}/`, score with same rubric, compa
 - **IP creep** — gen pipeline starts riffing on existing IPs because they're in training data → scorer's `ip_or_legal_risk` field catches it, but we should also catch in prompt-construction
 - **Rubric noise** — if a batch comes back `⚠️ unstable` (std > 2.0 across N runs), the rubric is making an unsteady judgment on this image. Don't trust the median; either rescore at `--runs 5` or accept that this image is borderline.
 - **Degraded 2-shot batches** — if you see batches saving with `2 runs` instead of `3 runs`, a transient API call failed mid-batch; the ≥2 threshold preserved the result but it has lower stability resolution. Re-run if stability matters.
+- **Competitor screenshots in alphawalk folder** — caught BEFORE Sonnet spend by the pre-scoring intake gate (Haiku classifier). If you see `⚠️ Classifier detected competitor brands ...`, move the flagged images to `creatives/benchmarks/competitor-monitoring/<brand>/<date>/` and re-run. Bypass with `--skip-classify` if the classifier's wrong.
 
 ## What's NOT in this project (yet)
 

@@ -2,11 +2,13 @@
 import "dotenv/config";
 import fs from "fs";
 import path from "path";
+import Anthropic from "@anthropic-ai/sdk";
 import { ScoreDB, computeContentHash } from "./db.js";
 import { Scorer } from "./scorer.js";
 import { AdType } from "./rubric.js";
 import { generateHtmlReport, generateCsv } from "./report.js";
 import { formatStability } from "./aggregate.js";
+import { classifyAll } from "./classifier.js";
 
 const DEFAULT_DB_PATH = process.env.DB_PATH || "./data/scores.db";
 const DEFAULT_MODEL = process.env.SCORER_MODEL || "claude-sonnet-4-6";
@@ -49,11 +51,12 @@ async function cmdScore(args: string[]) {
   const target = args[0];
   if (!target) {
     console.error(
-      "Usage: score <image-or-folder> [--runs N] [--force] [--model <model>] [--ad-type alphawalk|benchmark]"
+      "Usage: score <image-or-folder> [--runs N] [--force] [--model <model>] [--ad-type alphawalk|benchmark] [--skip-classify]"
     );
     process.exit(1);
   }
   const force = args.includes("--force");
+  const skipClassify = args.includes("--skip-classify");
   const modelIdx = args.indexOf("--model");
   const model = modelIdx >= 0 ? args[modelIdx + 1] : DEFAULT_MODEL;
 
@@ -77,6 +80,35 @@ async function cmdScore(args: string[]) {
   if (images.length === 0) {
     console.error(`✗ No supported images found at ${target}`);
     process.exit(1);
+  }
+
+  // Pre-scoring brand classifier gate. Catches the recurring failure mode of
+  // competitor screenshots dropped into an alphawalk folder. Skip if folder
+  // is already declared as competitor monitoring (path or explicit flag), or
+  // if the user opts out.
+  const isBenchmarkBatch =
+    explicitAdType === "benchmark" || images.every((img) => img.includes("/benchmarks/"));
+  if (!skipClassify && !isBenchmarkBatch) {
+    process.stdout.write(`Pre-classifying ${images.length} image(s) for primary advertiser ... `);
+    const classifyClient = new Anthropic({ apiKey: getApiKey() });
+    const classified = await classifyAll(classifyClient, images);
+    const flagged = classified.filter(
+      (c) => c.brand !== null && c.brand.toLowerCase().trim() !== "alphawalk"
+    );
+    process.stdout.write(`done.\n\n`);
+    if (flagged.length > 0) {
+      console.error(`⚠️  Classifier detected competitor brands in ${flagged.length} of ${images.length} image(s):\n`);
+      for (const c of flagged) console.error(`  ${path.basename(c.filepath)}  →  ${c.brand}`);
+      const firstBrand = flagged[0].brand!.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+      const dateStr = new Date().toISOString().slice(0, 10);
+      console.error(`\nThese look like competitor ads, not Alphawalk creatives. Either:`);
+      console.error(`  • Move them to ./creatives/benchmarks/competitor-monitoring/${firstBrand}/${dateStr}/ and re-run`);
+      console.error(`    (path containing /benchmarks/ auto-routes to ad_type=benchmark — competitor logos expected, not flagged)`);
+      console.error(`  • Or add --skip-classify if the classifier is wrong (false positive)`);
+      console.error(`  • Or pass --ad-type benchmark explicitly if you want to score these as competitor reference`);
+      console.error(`\nNo Sonnet API spend incurred. Aborting.`);
+      process.exit(2);
+    }
   }
 
   console.log(`Found ${images.length} image(s). Model: ${model}, runs/image: ${runs}\n`);
@@ -291,15 +323,21 @@ function printHelp() {
 Ad Scorer — automated rubric-based evaluation of ad images
 
 USAGE:
-  npm run score <image-or-folder> [--runs N] [--force] [--model <model>] [--ad-type alphawalk|benchmark]
+  npm run score <image-or-folder> [--runs N] [--force] [--model <model>] [--ad-type alphawalk|benchmark] [--skip-classify]
       Score image(s) with N parallel Claude vision calls per image (default N=3).
       Aggregates via median; flags batches with std > 2.0 as "⚠️ unstable".
-      --runs N     number of runs per image; 1 = cheap single-shot mode (default 3)
-      --force      rescore even if previously scored (creates a new batch)
-      --model      override model (default: ${DEFAULT_MODEL})
-      --ad-type    "alphawalk" (default for normal paths) treats competitor logos as IP risk;
-                   "benchmark" treats them as expected. Auto-set to "benchmark" when the
-                   path contains /benchmarks/.
+      Pre-scoring intake gate: a cheap Haiku classifier checks each image for
+      well-known competitor brands; if any are detected in alphawalk mode, the
+      batch aborts with a suggested fix (move to /benchmarks/) BEFORE any Sonnet
+      spend. Auto-skipped for benchmark paths/flag.
+      --runs N         number of runs per image; 1 = cheap single-shot mode (default 3)
+      --force          rescore even if previously scored (creates a new batch)
+      --model          override model (default: ${DEFAULT_MODEL})
+      --ad-type        "alphawalk" (default for normal paths) treats competitor logos as IP risk;
+                       "benchmark" treats them as expected. Auto-set to "benchmark" when the
+                       path contains /benchmarks/.
+      --skip-classify  bypass the pre-scoring brand classifier (use if classifier false-positives
+                       on a legit alphawalk creative).
 
   npm run report [--out=<path>] [--filter-path=<substring>]
       Generate HTML report. Default: ./reports/report-YYYY-MM-DD.html
