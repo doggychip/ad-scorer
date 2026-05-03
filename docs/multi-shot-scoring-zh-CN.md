@@ -138,6 +138,42 @@ No Sonnet API spend incurred. Aborting.
 
 ---
 
+## 完整每日工作流（闭环）
+
+multi-shot评分只是循环里的一环。完整循环：
+
+```bash
+# 1. 拉今天该生成什么图的prompts（自动学过去7天的winners/losers/keywords）
+npm run next-prompts
+
+# 2. copy prompts → Gemini Imagen 或 ChatGPT Image 2.0 → 下载图
+
+# 3. 拖图到 ./creatives/2026-05-04/，然后score
+npm run score ./creatives/2026-05-04/
+
+# 4. 看report
+npm run report -- --filter-path=2026-05-04
+open ./reports/report-2026-05-04.html
+```
+
+**`next-prompts` 在干嘛**：
+- 读 brand-dna.json（视觉DNA硬约束，比如配色 / protagonist规则 / 禁忌列表）
+- 读过去7天的winners（>=28分的）→ 学其`winning_hypothesis`（什么work了）
+- 读过去7天的losers（<22分的）→ 学其`failure_modes`（什么不work）
+- 读过去7天的aggregated keywords → emphasize positives, avoid negatives
+- 喂给 Claude Sonnet → 输出N条natural-language prompts，可直接贴Gemini/ChatGPT
+- 存档 `prompts/2026-05-04.md`
+
+**有创意brief时**：
+```bash
+npm run next-prompts -- --n 5 --brief "lead with brand memorability hook"
+```
+brief是hard requirement —— 每条prompt都必须围绕这个主题写。
+
+**这是"循环"的意思**：今天scoring出来的反馈，明天next-prompts会自动学到。每跑一天brand DNA固定 + 反馈累积，理论上越跑越逼近"这brand下哪种ad最有效"。
+
+---
+
 ## 已知小坑
 
 - **`npm run keywords` 计数偏高 3×**：因为3次runs每次都会加一遍keyword出现次数。相对排序仍然对，但绝对数字别跟旧数据直接比。

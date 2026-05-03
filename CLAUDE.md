@@ -49,17 +49,26 @@ brand-dna.json (single source of truth)
 
 ## Common workflows
 
-### Daily ad scoring
+### Daily loop (gen → score → feedback closes here)
 ```bash
-# Default: 3 runs per image (more reliable scores, ~3x API cost)
+# 1. Pull today's prompts (auto-learns from last 7 days of winners/losers/keywords)
+npm run next-prompts
+
+# 2. Copy prompts → Gemini Imagen / ChatGPT Image 2.0 → download → drop into:
+#    ./creatives/$(date +%Y-%m-%d)/
+
+# 3. Score (intake gate filters competitor mis-classifications, then N=3 multi-shot)
 npm run score ./creatives/$(date +%Y-%m-%d)/
 
-# Cheap probe mode (single-shot, useful for early-day iteration)
-# npm run score ./creatives/$(date +%Y-%m-%d)/ -- --runs 1
-
-npm run keywords 30
+# 4. Read the report (today's results feed tomorrow's next-prompts)
 npm run report -- --filter-path=$(date +%Y-%m-%d)
 open ./reports/report-$(date +%Y-%m-%d).html
+
+# Optional cheap probe (single-shot, ~1/3 cost) when iterating mid-day:
+# npm run score ./creatives/$(date +%Y-%m-%d)/ -- --runs 1
+
+# Optional with a creative brief that constrains every prompt:
+# npm run next-prompts -- --n 5 --brief "lead with brand memorability hook"
 ```
 
 ### After a Meta/TikTok campaign closes (when CTR/CVR data comes in)
