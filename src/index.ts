@@ -308,6 +308,46 @@ async function cmdKeywords(args: string[]) {
   db.close();
 }
 
+async function cmdNextPrompts(args: string[]) {
+  const nIdx = args.indexOf("--n");
+  const n = nIdx >= 0 ? parseInt(args[nIdx + 1], 10) : 5;
+  if (!Number.isInteger(n) || n < 1 || n > 20) {
+    console.error(`✗ Invalid --n "${args[nIdx + 1]}". Use an integer 1-20.`);
+    process.exit(1);
+  }
+  const daysIdx = args.indexOf("--days");
+  const days = daysIdx >= 0 ? parseInt(args[daysIdx + 1], 10) : 7;
+  if (!Number.isInteger(days) || days < 1 || days > 365) {
+    console.error(`✗ Invalid --days "${args[daysIdx + 1]}". Use an integer 1-365.`);
+    process.exit(1);
+  }
+  const briefIdx = args.indexOf("--brief");
+  const brief = briefIdx >= 0 ? args[briefIdx + 1] : undefined;
+
+  const { generateNextPrompts } = await import("./next-prompts.js");
+  process.stdout.write(`Generating ${n} prompts from last ${days} days of feedback ... `);
+  const result = await generateNextPrompts({
+    n,
+    days,
+    brief,
+    apiKey: getApiKey(),
+    model: process.env.PROMPT_GEN_MODEL || "claude-sonnet-4-6",
+    dbPath: DEFAULT_DB_PATH,
+    brandDnaPath: process.env.BRAND_DNA_PATH || "./brand-dna.json",
+    outputDir: "./prompts",
+  });
+  process.stdout.write("done.\n\n");
+  console.log(
+    `Context: ${result.context.totalBatches} batches in window — ${result.context.winnerCount} winners, ${result.context.loserCount} losers, ${result.context.positiveKeywords}+ / ${result.context.negativeKeywords}- keywords`
+  );
+  console.log(`Saved: ${result.outputPath}\n`);
+  console.log("--- Prompts ---\n");
+  result.prompts.forEach((p, i) => {
+    console.log(`Prompt ${i + 1}:\n${p}\n`);
+  });
+  console.log(`Paste any of the above into Gemini Imagen or ChatGPT Image 2.0 as-is.`);
+}
+
 async function cmdExport(args: string[]) {
   const outArg = args.find((a) => a.startsWith("--out="));
   const outPath = outArg ? outArg.replace("--out=", "") : `./reports/scores.csv`;
@@ -347,8 +387,17 @@ USAGE:
   npm run winners [N]            Top N ads (default 10)
   npm run losers [N]             Bottom N ads (default 10)
   npm run stats                  Aggregate statistics (shows "Total aggregated batches")
-  npm run keywords [N]           Top N keyword feedback (default 20; counts are per scoring run)
+  npm run keywords [N]           Top N keyword feedback (default 20; per-batch counts)
   npm run export [--out=<path>]  Export all scores to CSV
+
+  npm run next-prompts [--n N] [--days D] [--brief "..."]
+      Closes the gen → score → feedback loop. Reads last D days of winners/losers
+      and aggregated keyword feedback, plus the locked brand-dna.json, and asks
+      Claude Sonnet for N fresh image-gen prompts to feed into Gemini Imagen or
+      ChatGPT Image 2.0. Saves to prompts/<date>.md and prints to stdout.
+      --n N        number of prompts to generate (default 5, max 20)
+      --days D     historical window in days (default 7, max 365)
+      --brief      hard creative requirement — every prompt MUST address this
 
 EXAMPLES:
   npm run score ./creatives/2026-04-29/
@@ -358,6 +407,8 @@ EXAMPLES:
   npm run score ./creatives/2026-05-02/                   # default N=3
   npm run score ./creatives/2026-05-02/ -- --runs 1       # cheap probe
   npm run score ./creatives/draft.png -- --runs 5 --force # high-stakes review
+  npm run next-prompts                                    # 5 prompts from last 7 days
+  npm run next-prompts -- --n 10 --brief "energy theme"   # 10 prompts on energy
 `);
 }
 
@@ -384,6 +435,9 @@ async function main() {
       break;
     case "export":
       await cmdExport(args);
+      break;
+    case "next-prompts":
+      await cmdNextPrompts(args);
       break;
     case "help":
     case "--help":

@@ -8,6 +8,7 @@ data/*.db-shm
 reports/*.html
 reports/*.csv
 reports/*.pdf
+prompts/*.md
 .DS_Store
 *.log
 
