@@ -103,8 +103,14 @@ export class PerformanceDB {
    * can map to filename. Adjust the matching logic here as needed.
    */
   findAdIdByFilename(filename: string): number | null {
+    // ORDER BY run_index ASC LIMIT 1: with multi-shot scoring, multiple rows
+    // share the same filename. Always return the canonical run_index=0 row so
+    // callers get a deterministic id rather than an arbitrary batch member.
     const row = this.db
-      .prepare(`SELECT id FROM scores WHERE filename = ? OR filename LIKE ?`)
+      .prepare(
+        `SELECT id FROM scores WHERE filename = ? OR filename LIKE ?
+         ORDER BY run_index ASC LIMIT 1`
+      )
       .get(filename, `%${filename}%`) as { id: number } | undefined;
     return row?.id ?? null;
   }

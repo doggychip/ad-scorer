@@ -6,6 +6,7 @@ import { ScoreDB, computeContentHash } from "./db.js";
 import { Scorer } from "./scorer.js";
 import { AdType } from "./rubric.js";
 import { generateHtmlReport, generateCsv } from "./report.js";
+import { formatStability } from "./aggregate.js";
 
 const DEFAULT_DB_PATH = process.env.DB_PATH || "./data/scores.db";
 const DEFAULT_MODEL = process.env.SCORER_MODEL || "claude-sonnet-4-6";
@@ -47,12 +48,22 @@ function collectImages(target: string): string[] {
 async function cmdScore(args: string[]) {
   const target = args[0];
   if (!target) {
-    console.error("Usage: score <image-or-folder> [--force] [--model <model>] [--ad-type alphawalk|benchmark]");
+    console.error(
+      "Usage: score <image-or-folder> [--runs N] [--force] [--model <model>] [--ad-type alphawalk|benchmark]"
+    );
     process.exit(1);
   }
   const force = args.includes("--force");
   const modelIdx = args.indexOf("--model");
   const model = modelIdx >= 0 ? args[modelIdx + 1] : DEFAULT_MODEL;
+
+  const runsIdx = args.indexOf("--runs");
+  const runsArg = runsIdx >= 0 ? parseInt(args[runsIdx + 1], 10) : 3;
+  if (!Number.isInteger(runsArg) || runsArg < 1 || runsArg > 10) {
+    console.error(`✗ Invalid --runs "${args[runsIdx + 1]}". Use an integer 1-10.`);
+    process.exit(1);
+  }
+  const runs = runsArg;
 
   const adTypeIdx = args.indexOf("--ad-type");
   const adTypeFlag = adTypeIdx >= 0 ? args[adTypeIdx + 1] : undefined;
@@ -68,10 +79,12 @@ async function cmdScore(args: string[]) {
     process.exit(1);
   }
 
-  console.log(`Found ${images.length} image(s). Model: ${model}\n`);
+  console.log(`Found ${images.length} image(s). Model: ${model}, runs/image: ${runs}\n`);
 
   const db = new ScoreDB(DEFAULT_DB_PATH);
   const scorer = new Scorer(getApiKey(), model, getBrand());
+  const { aggregateBatch } = await import("./aggregate.js");
+  const { randomUUID } = await import("crypto");
 
   let scored = 0;
   let skipped = 0;
@@ -80,27 +93,52 @@ async function cmdScore(args: string[]) {
   for (const img of images) {
     const filename = path.basename(img);
     const hash = computeContentHash(img);
-    if (!force && db.hasScoredByHash(hash)) {
+    if (!force && db.hasBatchByHash(hash, model)) {
       console.log(`⊝ ${filename} (already scored — use --force to rescore)`);
       skipped++;
       continue;
     }
-    // Per-image ad type: explicit flag wins; otherwise auto-detect from path.
     const adType: AdType =
       explicitAdType ?? (img.includes("/benchmarks/") ? "benchmark" : "alphawalk");
-    try {
-      process.stdout.write(`→ ${filename} [${adType}] ... `);
-      const { result, raw, model: usedModel } = await scorer.scoreImage(img, adType);
-      const id = db.insert(filename, img, hash, usedModel, result, raw);
-      const ipFlag = result.ip_or_legal_risk ? " ⚠️ IP RISK" : "";
-      console.log(
-        `${result.total}/40 [${result.verdict}]${ipFlag} (id ${id})`
-      );
-      scored++;
-    } catch (err) {
-      console.log(`FAILED: ${(err as Error).message}`);
+
+    process.stdout.write(`→ ${filename} [${adType}] runs=${runs} ... `);
+    const { runs: results, errors } = await scorer.scoreImageMultiShot(img, adType, runs);
+
+    if (results.length < 2 && runs >= 2) {
+      console.log(`FAILED: only ${results.length}/${runs} runs succeeded; need ≥2. First error: ${errors[0]?.message ?? "n/a"}`);
       failed++;
+      continue;
     }
+    if (results.length === 0) {
+      console.log(`FAILED: 0/${runs} runs succeeded. First error: ${errors[0]?.message ?? "n/a"}`);
+      failed++;
+      continue;
+    }
+
+    const batchId = randomUUID();
+    const rawRuns = db.transaction(() => {
+      return results.map((r, i) => {
+        const id = db.insertRun(filename, img, hash, model, batchId, i, r.result, r.raw);
+        return {
+          id,
+          filename,
+          filepath: img,
+          scored_at: "",
+          batch_id: batchId,
+          run_index: i,
+          result: r.result,
+        };
+      });
+    });
+
+    const agg = aggregateBatch(rawRuns);
+    const stdStr = agg.std_total !== null ? `±${agg.std_total.toFixed(1)}` : "";
+    const stabilityTag = formatStability(agg.stability, "en");
+    const ipFlag = agg.result.ip_or_legal_risk ? " ⚠️ IP RISK" : "";
+    console.log(
+      `${agg.result.total}${stdStr}/40 [${agg.result.verdict}, ${stabilityTag}]${ipFlag} (batch ${batchId.slice(0, 6)}, ${results.length} runs)`
+    );
+    scored++;
   }
 
   console.log(`\n✓ Done. Scored ${scored}, skipped ${skipped}, failed ${failed}.`);
@@ -117,8 +155,7 @@ async function cmdReport(args: string[]) {
   const filterPath = filterArg ? filterArg.replace("--filter-path=", "") : undefined;
 
   const db = new ScoreDB(DEFAULT_DB_PATH);
-  const all = db.getAll();
-  const records = filterPath ? all.filter((r) => r.filepath.includes(filterPath)) : all;
+  const records = db.getAggregatedRecords(filterPath);
   const keywords = db.aggregateKeywords(filterPath);
   if (records.length === 0) {
     console.error(
@@ -139,11 +176,14 @@ async function cmdReport(args: string[]) {
 async function cmdWinners(args: string[]) {
   const n = parseInt(args[0] || "10", 10);
   const db = new ScoreDB(DEFAULT_DB_PATH);
-  const winners = db.getTopN(n);
+  const all = db.getAggregatedRecords();
+  const winners = all.slice(0, n); // already sorted by total desc
   console.log(`\nTop ${n} ads by score:\n`);
   for (const r of winners) {
+    const stdStr = r.std_total !== null ? `±${r.std_total.toFixed(1)}` : "";
+    const stabilityTag = formatStability(r.stability);
     console.log(
-      `  ${r.result.total}/40 [${r.result.verdict.padEnd(9)}] ${r.filename}`
+      `  ${r.result.total}${stdStr}/40 [${r.result.verdict.padEnd(9)}, ${stabilityTag}] ${r.filename}`
     );
     console.log(`    → ${r.result.winning_hypothesis}`);
   }
@@ -153,12 +193,15 @@ async function cmdWinners(args: string[]) {
 async function cmdLosers(args: string[]) {
   const n = parseInt(args[0] || "10", 10);
   const db = new ScoreDB(DEFAULT_DB_PATH);
-  const losers = db.getBottomN(n);
+  const all = db.getAggregatedRecords();
+  const losers = all.slice(-n).reverse(); // worst first
   console.log(`\nBottom ${n} ads by score:\n`);
   for (const r of losers) {
-    const ip = r.result.ip_or_legal_risk ? " ⚠️" : "";
+    const stdStr = r.std_total !== null ? `±${r.std_total.toFixed(1)}` : "";
+    const stabilityTag = formatStability(r.stability);
+    const ipBadge = r.result.ip_or_legal_risk ? " ⚠️" : "";
     console.log(
-      `  ${r.result.total}/40 [${r.result.verdict.padEnd(9)}]${ip} ${r.filename}`
+      `  ${r.result.total}${stdStr}/40 [${r.result.verdict.padEnd(9)}, ${stabilityTag}]${ipBadge} ${r.filename}`
     );
     if (r.result.failure_modes.length) {
       console.log(`    ✗ ${r.result.failure_modes.join("; ")}`);
@@ -169,28 +212,42 @@ async function cmdLosers(args: string[]) {
 
 async function cmdStats() {
   const db = new ScoreDB(DEFAULT_DB_PATH);
-  const stats = db.getStats();
-  console.log(`\nTotal scored: ${stats.total}`);
-  if (stats.total === 0) {
-    db.close();
-    return;
+  const records = db.getAggregatedRecords();
+  const verdictCounts = { winner: 0, candidate: 0, reject: 0 };
+  const stabilityCounts = { stable: 0, unstable: 0, "single-shot": 0 };
+  let ipFlagged = 0;
+  let totalSum = 0;
+  const dimSums = {
+    focal_point: 0,
+    information_density: 0,
+    information_hierarchy: 0,
+    brand_consistency: 0,
+    differentiation: 0,
+    emotional_tone: 0,
+    cta_clarity: 0,
+    anti_ai_feel: 0,
+  };
+  for (const r of records) {
+    verdictCounts[r.result.verdict]++;
+    stabilityCounts[r.stability]++;
+    if (r.result.ip_or_legal_risk) ipFlagged++;
+    totalSum += r.result.total;
+    for (const k of Object.keys(dimSums) as (keyof typeof dimSums)[]) {
+      dimSums[k] += r.result.scores[k];
+    }
   }
-  console.log(`IP risk flagged: ${stats.ipRiskCount}`);
+  const n = records.length || 1;
+  console.log(`\nTotal aggregated batches: ${records.length}`);
+  console.log(`IP risk flagged: ${ipFlagged}`);
   console.log(`\nVerdict breakdown:`);
-  for (const v of stats.verdictCounts) {
-    console.log(`  ${v.verdict.padEnd(10)} ${v.n}`);
+  for (const [v, c] of Object.entries(verdictCounts)) console.log(`  ${v.padEnd(10)} ${c}`);
+  console.log(`\nStability breakdown:`);
+  for (const [s, c] of Object.entries(stabilityCounts)) console.log(`  ${s.padEnd(12)} ${c}`);
+  console.log(`\nAverage scores (across batches):`);
+  console.log(`  total              ${(totalSum / n).toFixed(2)} / 40`);
+  for (const [k, sum] of Object.entries(dimSums)) {
+    console.log(`  ${k.padEnd(18)} ${(sum / n).toFixed(2)} / 5`);
   }
-  console.log(`\nAverage scores:`);
-  const a = stats.averages;
-  console.log(`  total              ${a.avg_total.toFixed(2)} / 40`);
-  console.log(`  focal_point        ${a.avg_focal.toFixed(2)} / 5`);
-  console.log(`  info_density       ${a.avg_density.toFixed(2)} / 5`);
-  console.log(`  info_hierarchy     ${a.avg_hierarchy.toFixed(2)} / 5`);
-  console.log(`  brand_consistency  ${a.avg_brand.toFixed(2)} / 5`);
-  console.log(`  differentiation    ${a.avg_diff.toFixed(2)} / 5`);
-  console.log(`  emotional_tone     ${a.avg_emotion.toFixed(2)} / 5`);
-  console.log(`  cta_clarity        ${a.avg_cta.toFixed(2)} / 5`);
-  console.log(`  anti_ai_feel       ${a.avg_antiai.toFixed(2)} / 5`);
   db.close();
 }
 
@@ -234,9 +291,11 @@ function printHelp() {
 Ad Scorer — automated rubric-based evaluation of ad images
 
 USAGE:
-  npm run score <image-or-folder> [--force] [--model <model>] [--ad-type alphawalk|benchmark]
-      Score one image or all images in a folder.
-      --force      rescore even if previously scored
+  npm run score <image-or-folder> [--runs N] [--force] [--model <model>] [--ad-type alphawalk|benchmark]
+      Score image(s) with N parallel Claude vision calls per image (default N=3).
+      Aggregates via median; flags batches with std > 2.0 as "⚠️ unstable".
+      --runs N     number of runs per image; 1 = cheap single-shot mode (default 3)
+      --force      rescore even if previously scored (creates a new batch)
       --model      override model (default: ${DEFAULT_MODEL})
       --ad-type    "alphawalk" (default for normal paths) treats competitor logos as IP risk;
                    "benchmark" treats them as expected. Auto-set to "benchmark" when the
@@ -249,8 +308,8 @@ USAGE:
 
   npm run winners [N]            Top N ads (default 10)
   npm run losers [N]             Bottom N ads (default 10)
-  npm run stats                  Aggregate statistics
-  npm run keywords [N]           Top N keyword feedback (default 20)
+  npm run stats                  Aggregate statistics (shows "Total aggregated batches")
+  npm run keywords [N]           Top N keyword feedback (default 20; counts are per scoring run)
   npm run export [--out=<path>]  Export all scores to CSV
 
 EXAMPLES:
@@ -258,6 +317,9 @@ EXAMPLES:
   npm run score ./creatives/draft-v3.png --force
   npm run report
   npm run keywords 30
+  npm run score ./creatives/2026-05-02/                   # default N=3
+  npm run score ./creatives/2026-05-02/ -- --runs 1       # cheap probe
+  npm run score ./creatives/draft.png -- --runs 5 --force # high-stakes review
 `);
 }
 

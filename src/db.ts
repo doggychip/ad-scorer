@@ -4,6 +4,7 @@ import path from "path";
 import fs from "fs";
 import crypto from "crypto";
 import { ScoreResult, ImageRecord, KeywordAggregation } from "./types.js";
+import { aggregateBatch } from "./aggregate.js";
 
 /**
  * SHA-256 of a file's bytes, as a hex string. Used as the canonical identity
@@ -58,6 +59,8 @@ export class ScoreDB {
     for (const col of [
       `ALTER TABLE scores ADD COLUMN content_hash TEXT`,
       `ALTER TABLE scores ADD COLUMN scored_by_model TEXT`,
+      `ALTER TABLE scores ADD COLUMN batch_id TEXT`,
+      `ALTER TABLE scores ADD COLUMN run_index INTEGER`,
     ]) {
       try {
         this.db.exec(col);
@@ -66,6 +69,14 @@ export class ScoreDB {
       }
     }
 
+    // Backfill legacy rows: each becomes a "size-1 batch" tagged legacy-{id}.
+    // Idempotent — only touches rows where batch_id is still NULL.
+    this.db.exec(`
+      UPDATE scores
+      SET batch_id = 'legacy-' || id, run_index = 0
+      WHERE batch_id IS NULL;
+    `);
+
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_total ON scores(total DESC);
       CREATE INDEX IF NOT EXISTS idx_scored_at ON scores(scored_at DESC);
@@ -73,6 +84,7 @@ export class ScoreDB {
       CREATE INDEX IF NOT EXISTS idx_filename ON scores(filename);
       CREATE INDEX IF NOT EXISTS idx_content_hash ON scores(content_hash);
       CREATE INDEX IF NOT EXISTS idx_model ON scores(scored_by_model);
+      CREATE INDEX IF NOT EXISTS idx_batch_id ON scores(batch_id);
 
       CREATE TABLE IF NOT EXISTS benchmark_baselines (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -92,24 +104,27 @@ export class ScoreDB {
     `);
   }
 
-  insert(
+  insertRun(
     filename: string,
     filepath: string,
     contentHash: string,
     model: string,
+    batchId: string,
+    runIndex: number,
     result: ScoreResult,
     raw: string
   ): number {
     const stmt = this.db.prepare(`
       INSERT INTO scores (
         filename, filepath, content_hash, scored_by_model,
+        batch_id, run_index,
         focal_point, information_density, information_hierarchy,
         brand_consistency, differentiation, emotional_tone,
         cta_clarity, anti_ai_feel, total,
         winning_hypothesis, failure_modes_json,
         keywords_emphasize_json, keywords_remove_json,
         ip_or_legal_risk, verdict, raw_response
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `);
 
     const info = stmt.run(
@@ -117,6 +132,8 @@ export class ScoreDB {
       filepath,
       contentHash,
       model,
+      batchId,
+      runIndex,
       result.scores.focal_point,
       result.scores.information_density,
       result.scores.information_hierarchy,
@@ -138,6 +155,11 @@ export class ScoreDB {
     return info.lastInsertRowid as number;
   }
 
+  /** Execute fn inside a single SQLite transaction. fn must be synchronous. */
+  transaction<T>(fn: () => T): T {
+    return this.db.transaction(fn)();
+  }
+
   /**
    * Check whether the bytes at this path have already been scored.
    * Identity is content_hash (SHA-256), so moving/renaming a file does NOT
@@ -152,6 +174,20 @@ export class ScoreDB {
     const row = this.db
       .prepare(`SELECT 1 FROM scores WHERE content_hash = ? LIMIT 1`)
       .get(contentHash);
+    return !!row;
+  }
+
+  /**
+   * True iff at least one row exists for this content_hash + model combo.
+   * Counts legacy single-shot batches as "already scored" — matching the
+   * non-goal of auto-rescoring legacy data.
+   */
+  hasBatchByHash(contentHash: string, model: string): boolean {
+    const row = this.db
+      .prepare(
+        `SELECT 1 FROM scores WHERE content_hash = ? AND scored_by_model = ? LIMIT 1`
+      )
+      .get(contentHash, model);
     return !!row;
   }
 
@@ -269,6 +305,72 @@ export class ScoreDB {
     }
     result.sort((a, b) => b.net_score - a.net_score);
     return result;
+  }
+
+  private rowToRawRun(row: any): import("./types.js").RawRunRow {
+    return {
+      id: row.id,
+      filename: row.filename,
+      filepath: row.filepath,
+      scored_at: row.scored_at,
+      batch_id: row.batch_id,
+      run_index: row.run_index ?? 0,
+      result: {
+        scores: {
+          focal_point: row.focal_point,
+          information_density: row.information_density,
+          information_hierarchy: row.information_hierarchy,
+          brand_consistency: row.brand_consistency,
+          differentiation: row.differentiation,
+          emotional_tone: row.emotional_tone,
+          cta_clarity: row.cta_clarity,
+          anti_ai_feel: row.anti_ai_feel,
+        },
+        total: row.total,
+        winning_hypothesis: row.winning_hypothesis ?? "",
+        failure_modes: JSON.parse(row.failure_modes_json || "[]"),
+        suggested_keywords_to_emphasize: JSON.parse(
+          row.keywords_emphasize_json || "[]"
+        ),
+        suggested_keywords_to_remove: JSON.parse(
+          row.keywords_remove_json || "[]"
+        ),
+        ip_or_legal_risk: row.ip_or_legal_risk,
+        verdict: row.verdict,
+      },
+    };
+  }
+
+  /**
+   * Pull all rows (optionally filtered by filepath substring), group by
+   * batch_id, and return one AggregatedRecord per batch.
+   */
+  getAggregatedRecords(
+    filterPathSubstring?: string
+  ): import("./types.js").AggregatedRecord[] {
+    const sql = filterPathSubstring
+      ? `SELECT * FROM scores WHERE filepath LIKE ? ORDER BY batch_id, run_index`
+      : `SELECT * FROM scores ORDER BY batch_id, run_index`;
+    const stmt = this.db.prepare(sql);
+    const rows = (filterPathSubstring
+      ? stmt.all(`%${filterPathSubstring}%`)
+      : stmt.all()) as any[];
+
+    const byBatch = new Map<string, import("./types.js").RawRunRow[]>();
+    for (const row of rows) {
+      const raw = this.rowToRawRun(row);
+      const arr = byBatch.get(raw.batch_id) || [];
+      arr.push(raw);
+      byBatch.set(raw.batch_id, arr);
+    }
+
+    const out: import("./types.js").AggregatedRecord[] = [];
+    for (const runs of byBatch.values()) {
+      out.push(aggregateBatch(runs));
+    }
+    // Sort by total descending — matches existing report sort.
+    out.sort((a, b) => b.result.total - a.result.total);
+    return out;
   }
 
   private rowToRecord(row: any): ImageRecord {
