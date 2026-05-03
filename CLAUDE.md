@@ -51,9 +51,14 @@ brand-dna.json (single source of truth)
 
 ### Daily ad scoring
 ```bash
+# Default: 3 runs per image (more reliable scores, ~3x API cost)
 npm run score ./creatives/$(date +%Y-%m-%d)/
+
+# Cheap probe mode (single-shot, useful for early-day iteration)
+# npm run score ./creatives/$(date +%Y-%m-%d)/ -- --runs 1
+
 npm run keywords 30
-npm run report
+npm run report -- --filter-path=$(date +%Y-%m-%d)
 open ./reports/report-$(date +%Y-%m-%d).html
 ```
 
@@ -73,6 +78,8 @@ Drop competitor ads into `./competitors/{brand}/`, score with same rubric, compa
 - **Style drift** — daily images aesthetic varies → `brand_consistency` low across recent batch → time to remind the gen pipeline of brand-dna
 - **Local optima** — scorer rates highly but real CTR is poor → rubric overfits to design-school criteria, missing market signal → revise rubric weights based on performance data
 - **IP creep** — gen pipeline starts riffing on existing IPs because they're in training data → scorer's `ip_or_legal_risk` field catches it, but we should also catch in prompt-construction
+- **Rubric noise** — if a batch comes back `⚠️ unstable` (std > 2.0 across N runs), the rubric is making an unsteady judgment on this image. Don't trust the median; either rescore at `--runs 5` or accept that this image is borderline.
+- **Degraded 2-shot batches** — if you see batches saving with `2 runs` instead of `3 runs`, a transient API call failed mid-batch; the ≥2 threshold preserved the result but it has lower stability resolution. Re-run if stability matters.
 
 ## What's NOT in this project (yet)
 
