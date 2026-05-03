@@ -87,7 +87,15 @@ function importCsv(csvPath: string): { inserted: number; skipped: number; errors
   const perfDb = new PerformanceDB(DB_PATH);
   // We need a separate scores DB connection to look up filename → ad_id
   const scoresDb = new Database(DB_PATH, { readonly: true });
-  const lookupStmt = scoresDb.prepare(`SELECT id FROM scores WHERE filename = ?`);
+  // Use run_index=0 as the canonical representative for the batch when
+  // joining performance data (Meta/TikTok CSVs key on filename, not batch_id).
+  // With multi-shot scoring (N>=2 default), multiple rows share a filename;
+  // without ORDER BY, .get() returned an arbitrary row and performance JOINs
+  // silently dropped N-1 rows per batch. ORDER BY run_index ASC LIMIT 1 makes
+  // the join deterministic.
+  const lookupStmt = scoresDb.prepare(
+    `SELECT id FROM scores WHERE filename = ? ORDER BY run_index ASC LIMIT 1`
+  );
 
   const required = [
     "ad_filename", "external_ad_id", "platform",
