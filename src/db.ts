@@ -262,24 +262,23 @@ export class ScoreDB {
     return { total, verdictCounts, averages: avgRow, ipRiskCount };
   }
 
-  /** Aggregate keyword feedback across all scored ads — the core feedback loop */
+  /** Aggregate keyword feedback across all scored ads — the core feedback loop.
+   *  One vote per BATCH (using the representative run's keyword arrays + the
+   *  aggregated median total), not per raw row. Pre-multi-shot this method
+   *  triple-counted phrases on N=3 batches; switching to batches normalizes
+   *  the scale so legacy single-shot rows and new 3-shot rows contribute
+   *  equally. */
   aggregateKeywords(filterPathSubstring?: string): KeywordAggregation[] {
-    const sql = filterPathSubstring
-      ? `SELECT keywords_emphasize_json, keywords_remove_json, total FROM scores WHERE filepath LIKE ?`
-      : `SELECT keywords_emphasize_json, keywords_remove_json, total FROM scores`;
-    const stmt = this.db.prepare(sql);
-    const rows = (filterPathSubstring
-      ? stmt.all(`%${filterPathSubstring}%`)
-      : stmt.all()) as { keywords_emphasize_json: string; keywords_remove_json: string; total: number }[];
+    const records = this.getAggregatedRecords(filterPathSubstring);
 
     const map = new Map<
       string,
       { emphasize: number; remove: number; totalSum: number; totalCount: number }
     >();
 
-    for (const row of rows) {
-      const empPhrases: string[] = JSON.parse(row.keywords_emphasize_json || "[]");
-      const remPhrases: string[] = JSON.parse(row.keywords_remove_json || "[]");
+    for (const r of records) {
+      const empPhrases = r.result.suggested_keywords_to_emphasize;
+      const remPhrases = r.result.suggested_keywords_to_remove;
       const all = new Set([...empPhrases, ...remPhrases].map((s) => s.toLowerCase().trim()));
 
       for (const phrase of all) {
@@ -287,7 +286,7 @@ export class ScoreDB {
         const cur = map.get(phrase) || { emphasize: 0, remove: 0, totalSum: 0, totalCount: 0 };
         if (empPhrases.some((p) => p.toLowerCase().trim() === phrase)) cur.emphasize++;
         if (remPhrases.some((p) => p.toLowerCase().trim() === phrase)) cur.remove++;
-        cur.totalSum += row.total;
+        cur.totalSum += r.result.total;
         cur.totalCount += 1;
         map.set(phrase, cur);
       }

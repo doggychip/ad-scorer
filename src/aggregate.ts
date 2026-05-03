@@ -1,6 +1,15 @@
 import { AggregatedRecord, RawRunRow, RubricScores, Stability, Verdict } from "./types.js";
 
-const STABILITY_STD_THRESHOLD = 2.0;
+// Threshold above which a multi-shot batch is flagged "⚠️ unstable".
+// Empirically calibrated against the 21-image IB benchmark (most stable batches
+// σ<1.5; flagged 9.png at σ≈2.2). Override via STABILITY_STD_THRESHOLD env var
+// to tune after a few weeks of production data.
+const STABILITY_STD_THRESHOLD = (() => {
+  const raw = process.env.STABILITY_STD_THRESHOLD;
+  if (!raw) return 2.0;
+  const parsed = parseFloat(raw);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 2.0;
+})();
 
 /** Recompute verdict from total via the project's existing thresholds. */
 function verdictFromTotal(total: number): Verdict {

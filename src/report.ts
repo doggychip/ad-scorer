@@ -82,7 +82,7 @@ export function generateHtmlReport(
             <div class="card-header">
               <span class="filename">${escapeHtml(r.filename)}</span>
               <span class="total" style="background:${verdictColor}">${r.result.total}${r.std_total !== null ? `±${r.std_total.toFixed(1)}` : ""}/40 · ${verdictLabel}</span>
-              <span class="stability" style="background:${STABILITY_COLOR[r.stability]}">${formatStability(r.stability)}</span>
+              <span class="stability" style="background:${STABILITY_COLOR[r.stability]}">${formatStability(r.stability)}${r.batch_size === 2 ? " (2/3)" : ""}</span>
             </div>
             ${ipBadge}
             <div class="scores">${scoreBars}</div>
