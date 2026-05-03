@@ -94,6 +94,37 @@ Report是中文HTML（同事直接open浏览器看就行）。每张广告一张
 
 ---
 
+## 防错保护：自动竞品图识别
+
+在调贵的Sonnet之前，先用便宜的 Haiku 4.5 扫一遍每张图（每张约 $0.0025），认出主广告主品牌。如果你以为是自家广告但其实是竞品截图（Robinhood / IB / Coinbase 等），会直接拦下并告诉你应该把图放到哪里：
+
+```
+$ npm run score ./creatives/2026-05-03/
+Pre-classifying 3 image(s) for primary advertiser ... done.
+
+⚠️  Classifier detected competitor brands in 3 of 3 image(s):
+
+  Screenshot 2026-05-03 at 2.17.53 PM.png  →  Robinhood
+  Screenshot 2026-05-03 at 2.18.02 PM.png  →  Robinhood
+  Screenshot 2026-05-03 at 2.18.15 PM.png  →  Robinhood
+
+These look like competitor ads, not Alphawalk creatives. Either:
+  • Move them to ./creatives/benchmarks/competitor-monitoring/robinhood/2026-05-03/ and re-run
+  • Or add --skip-classify if the classifier is wrong (false positive)
+  • Or pass --ad-type benchmark explicitly if you want to score these as competitor reference
+
+No Sonnet API spend incurred. Aborting.
+```
+
+**节省的不是钱**（多花$0.0075 vs 省3次×3 runs = 9 calls Sonnet ≈ $0.15），**节省的是错误数据进DB+清理时间**。
+
+**Bypass**：
+- `--skip-classify` — Haiku 误判时（false positive）
+- `--ad-type benchmark` — 你确实想 alphawalk-mode 评一张含竞品logo的对比图（罕见）
+- 路径放进 `creatives/benchmarks/...` — gate 自动跳过
+
+---
+
 ## PDF分享
 
 ```bash
