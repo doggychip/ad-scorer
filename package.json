@@ -14,6 +14,7 @@
     "export": "tsx src/index.ts export",
     "keywords": "tsx src/index.ts keywords",
     "next-prompts": "tsx src/index.ts next-prompts",
+    "feedback": "tsx src/index.ts feedback",
     "perf:import": "tsx src/perf-import.ts",
     "perf:correlate": "tsx src/perf-cli.ts correlate",
     "perf:overrated": "tsx src/perf-cli.ts overrated",

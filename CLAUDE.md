@@ -33,10 +33,20 @@ brand-dna.json (single source of truth)
 
 - `brand-dna.json` — **locked visual identity spec.** Inject into every gen prompt and every scorer call. Lock period: 90 days. Do not edit during lock.
 - `brand-dna.md` — rationale companion for `brand-dna.json`. Read this before suggesting any DNA change.
+- `creative-feedback.md` — **auto-generated** from `data/scores.db` via `npm run feedback`. Soft preferences (KEEP/AVOID keywords + dimension trends) learned from the last 7 days. NOT hand-edited; it's a build artifact.
 - `src/rubric.ts` — the scorer's system prompt. The single most important tunable in the project.
 - `src/scorer.ts` — Claude vision API wrapper. Uses JSON prefill (`{`) to lock structured output.
 - `src/db.ts` — SQLite schema + keyword aggregation queries.
 - `data/scores.db` — historical scores. Don't delete; this is the learning corpus.
+
+## Two files govern the generator
+
+The prompt-engineer subagent reads two files when drafting prompts. They have different authorities:
+
+- **`brand-dna.json`** = locked rules. Hand-edited on a 90-day cadence. The generator must never violate it.
+- **`creative-feedback.md`** = learned preferences within those rules. Auto-regenerated via `npm run feedback`. The generator biases keyword choices toward KEEP and away from AVOID.
+
+If they conflict, **brand-dna wins**. Don't manually edit `creative-feedback.md` — fix the upstream (rubric, brief targeting, batch composition) instead. Don't let any agent edit `brand-dna.json` autonomously.
 
 ## Hard rules (do NOT violate)
 
@@ -60,7 +70,11 @@ npm run next-prompts
 # 3. Score (intake gate filters competitor mis-classifications, then N=3 multi-shot)
 npm run score ./creatives/$(date +%Y-%m-%d)/
 
-# 4. Read the report (today's results feed tomorrow's next-prompts)
+# 4. Regenerate creative-feedback.md (KEEP/AVOID digest the prompt-engineer reads)
+npm run feedback -- --archive
+# Or run /feedback in Claude Code for the diff-summary version.
+
+# 5. Read the report (today's results feed tomorrow's next-prompts)
 npm run report -- --filter-path=$(date +%Y-%m-%d)
 open ./reports/report-$(date +%Y-%m-%d).html
 

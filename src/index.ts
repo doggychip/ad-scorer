@@ -358,6 +358,47 @@ async function cmdExport(args: string[]) {
   db.close();
 }
 
+async function cmdFeedback(args: string[]) {
+  const sinceIdx = args.indexOf("--since");
+  const untilIdx = args.indexOf("--until");
+  const archive = args.includes("--archive");
+  const outIdx = args.indexOf("--out");
+  const outputPath = outIdx >= 0 ? args[outIdx + 1] : "./creative-feedback.md";
+
+  const { loadCreativesInWindow } = await import("./feedback/adapter.js");
+  const { aggregateFeedback, writeFeedbackFile, defaultWindow, priorWindow } =
+    await import("./feedback/feedback.js");
+
+  // Window: --since/--until override defaultWindow (last 7 days)
+  const dw = defaultWindow();
+  const start = sinceIdx >= 0 ? args[sinceIdx + 1] : dw.start;
+  const end = untilIdx >= 0 ? args[untilIdx + 1] : dw.end;
+
+  // Prior window of equal length, immediately preceding, for trend calc.
+  const pw = priorWindow(start, end);
+
+  // Window endExclusive: bump end by one day so a creative scored exactly on
+  // `end` (e.g. "2026-05-04") is included in the current window.
+  const endExclusive = new Date(end);
+  endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
+  const endExclusiveStr = endExclusive.toISOString().slice(0, 10);
+
+  const current = loadCreativesInWindow(DEFAULT_DB_PATH, start, endExclusiveStr);
+  const prior = loadCreativesInWindow(DEFAULT_DB_PATH, pw.start, pw.end);
+
+  const inputs = aggregateFeedback(current, {
+    windowStart: start,
+    windowEnd: end,
+    priorWindowCreatives: prior,
+  });
+
+  const result = writeFeedbackFile(inputs, { outputPath, archive });
+  console.log(
+    `✓ Feedback written to ${result.outputPath} (${current.length} creatives in window ${start} → ${end}, ${prior.length} prior for trends)`
+  );
+  if (result.archivePath) console.log(`  Archive: ${result.archivePath}`);
+}
+
 function printHelp() {
   console.log(`
 Ad Scorer — automated rubric-based evaluation of ad images
@@ -389,6 +430,16 @@ USAGE:
   npm run stats                  Aggregate statistics (shows "Total aggregated batches")
   npm run keywords [N]           Top N keyword feedback (default 20; per-batch counts)
   npm run export [--out=<path>]  Export all scores to CSV
+
+  npm run feedback [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--archive] [--out PATH]
+      Regenerate creative-feedback.md from the latest scoring data. Reads
+      a window of scored creatives (default: last 7 days), computes KEEP/AVOID
+      keyword stats, dimension trends vs the prior equal-length window, and
+      writes a markdown digest the generator subagent reads before each batch.
+      --since YYYY-MM-DD   window start (default: 7 days ago)
+      --until YYYY-MM-DD   window end inclusive (default: today)
+      --archive            also save a timestamped copy under feedback-archive/
+      --out PATH           output path (default: ./creative-feedback.md)
 
   npm run next-prompts [--n N] [--days D] [--brief "..."]
       Closes the gen → score → feedback loop. Reads last D days of winners/losers
@@ -438,6 +489,9 @@ async function main() {
       break;
     case "next-prompts":
       await cmdNextPrompts(args);
+      break;
+    case "feedback":
+      await cmdFeedback(args);
       break;
     case "help":
     case "--help":

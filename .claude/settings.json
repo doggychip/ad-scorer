@@ -5,6 +5,17 @@
         "command": ".claude/hooks/inject-brand-dna.sh",
         "description": "Auto-inject brand-dna reminder when user asks to generate ad prompts"
       }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "scorer",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npm run feedback -- --archive 2>&1 | tail -3"
+          }
+        ]
+      }
     ]
   }
 }
