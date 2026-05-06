@@ -43,6 +43,7 @@ npm run keywords 30
 | `npm run stats` | Aggregate statistics + dimension averages |
 | `npm run keywords [N]` | Top N keyword phrases to emphasize / remove |
 | `npm run export` | Export all scores to CSV (`./reports/scores.csv`) |
+| `npm run notify [<path>] [--dry-run] [--locale=zh\|en]` | Post a Lark digest (counts, top winners, IP risks) to the team channel. Requires `LARK_WEBHOOK_URL`; add `LARK_SIGN_SECRET` for signed bots. |
 
 ## The feedback loop
 
@@ -120,5 +121,5 @@ Connect any BI tool (Metabase, Grafana, your finance dashboard) to `data/scores.
 
 - **Tie scores to actual CTR/CVR** — add a `performance` table that joins ad_id → CTR/CVR/CAC from your ad platform. Run correlation between rubric dimensions and actual performance to validate which dimensions predict ROI.
 - **Side-by-side A/B prompt testing** — generate the same ad concept with `keywords_emphasize` baseline vs. updated version, compare scores.
-- **Slack/Lark notification** — post daily summary of winners + IP risks to your team channel.
+- **Slack notification** — sibling to the Lark digest now shipped via `npm run notify`.
 - **Mobile review interface** — small Express app for reviewing borderline candidates on phone (you already have the dashboard pattern for this).

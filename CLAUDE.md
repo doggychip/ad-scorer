@@ -83,6 +83,11 @@ open ./reports/report-$(date +%Y-%m-%d).html
 
 # Optional with a creative brief that constrains every prompt:
 # npm run next-prompts -- --n 5 --brief "lead with brand memorability hook"
+
+# 6. (Optional) Push the digest to the team Lark channel.
+#    Requires LARK_WEBHOOK_URL in .env. Add LARK_SIGN_SECRET if your bot
+#    has signature verification on. --dry-run prints the payload without posting.
+npm run notify $(date +%Y-%m-%d)
 ```
 
 ### After a Meta/TikTok campaign closes (when CTR/CVR data comes in)
@@ -110,7 +115,7 @@ Drop competitor ads into `./competitors/{brand}/`, score with same rubric, compa
 - Performance correlation (CTR/CVR data join with scores) — planned, not built
 - Competitor benchmark mode — planned, not built
 - Storyboard / video shot list generation — planned, not built
-- Lark/Slack daily digest notifications — planned, not built
+- Slack digest — planned, not built (Lark digest is shipped via `npm run notify`)
 
 ## Subagents available
 

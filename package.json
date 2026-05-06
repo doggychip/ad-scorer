@@ -18,7 +18,8 @@
     "perf:import": "tsx src/perf-import.ts",
     "perf:correlate": "tsx src/perf-cli.ts correlate",
     "perf:overrated": "tsx src/perf-cli.ts overrated",
-    "perf:underrated": "tsx src/perf-cli.ts underrated"
+    "perf:underrated": "tsx src/perf-cli.ts underrated",
+    "notify": "tsx src/index.ts notify"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",

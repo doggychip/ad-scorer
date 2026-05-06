@@ -399,6 +399,70 @@ async function cmdFeedback(args: string[]) {
   if (result.archivePath) console.log(`  Archive: ${result.archivePath}`);
 }
 
+async function cmdNotify(args: string[]) {
+  // Positional: optional folder/path to scope (also accepted via --filter-path=)
+  const positional = args.find((a) => !a.startsWith("--"));
+  const filterArg = args.find((a) => a.startsWith("--filter-path="));
+  const filterPath = filterArg
+    ? filterArg.replace("--filter-path=", "")
+    : positional;
+  const dryRun = args.includes("--dry-run");
+  const localeArg = args.find((a) => a.startsWith("--locale="));
+  const localeRaw = localeArg ? localeArg.replace("--locale=", "") : "zh";
+  if (localeRaw !== "zh" && localeRaw !== "en") {
+    console.error(`✗ Invalid --locale "${localeRaw}". Use "zh" or "en".`);
+    process.exit(1);
+  }
+  const locale = localeRaw as "zh" | "en";
+
+  const webhookUrl = process.env.LARK_WEBHOOK_URL;
+  if (!webhookUrl && !dryRun) {
+    console.error(
+      `✗ LARK_WEBHOOK_URL not set. Either:\n` +
+        `  • Add it to .env (custom-bot URL from your Lark group), or\n` +
+        `  • Re-run with --dry-run to print the payload without posting.`
+    );
+    process.exit(1);
+  }
+  const secret = process.env.LARK_SIGN_SECRET || undefined;
+
+  const { loadRecordsForNotify, sendDigest } = await import("./notify.js");
+  const records = loadRecordsForNotify(DEFAULT_DB_PATH, filterPath);
+  const scope = filterPath ?? "(all scored records)";
+
+  if (records.length === 0) {
+    console.error(
+      `✗ No scored records${filterPath ? ` matching "${filterPath}"` : ""}. Score first, then notify.`
+    );
+    process.exit(1);
+  }
+
+  const result = await sendDigest(records, scope, {
+    webhookUrl: webhookUrl || "(dry-run)",
+    secret,
+    locale,
+    dryRun,
+  });
+
+  if (dryRun) {
+    console.log(`# Dry run — would POST to LARK_WEBHOOK_URL\n`);
+    console.log(result.text);
+    console.log(`\n# Payload:\n${JSON.stringify(result.payload, null, 2)}`);
+    return;
+  }
+
+  if (result.posted) {
+    console.log(
+      `✓ Digest sent (${result.summary.total} batches, ${result.summary.winners} winners, ${result.summary.ipFlagged} IP risks).`
+    );
+  } else {
+    console.error(
+      `✗ Lark webhook returned status ${result.postResult?.status}. Body:\n${result.postResult?.body}`
+    );
+    process.exit(1);
+  }
+}
+
 function printHelp() {
   console.log(`
 Ad Scorer — automated rubric-based evaluation of ad images
@@ -440,6 +504,17 @@ USAGE:
       --until YYYY-MM-DD   window end inclusive (default: today)
       --archive            also save a timestamped copy under feedback-archive/
       --out PATH           output path (default: ./creative-feedback.md)
+
+  npm run notify [<folder-or-substring>] [--filter-path=<sub>] [--dry-run] [--locale=zh|en]
+      Post a Lark digest of scored ads to a team channel. Counts by verdict,
+      top 3 winners, IP risks, unstable batches, and average total. Requires
+      LARK_WEBHOOK_URL in .env (custom-bot webhook). LARK_SIGN_SECRET enables
+      HMAC-SHA256 signature for protected webhooks.
+      <folder>     same semantics as --filter-path: scope to records whose
+                   filepath contains the substring. Default: all scored records.
+      --dry-run    format and print payload, but do not POST. Works without
+                   LARK_WEBHOOK_URL set, useful for testing the digest content.
+      --locale     zh (default) or en for the message text
 
   npm run next-prompts [--n N] [--days D] [--brief "..."]
       Closes the gen → score → feedback loop. Reads last D days of winners/losers
@@ -492,6 +567,9 @@ async function main() {
       break;
     case "feedback":
       await cmdFeedback(args);
+      break;
+    case "notify":
+      await cmdNotify(args);
       break;
     case "help":
     case "--help":
