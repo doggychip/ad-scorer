@@ -1,18 +1,26 @@
 // src/perf-cli.ts
 // CLI entry for performance correlation analysis.
-// Wire into package.json:
-//   "perf:correlate": "tsx src/perf-cli.ts correlate",
-//   "perf:overrated": "tsx src/perf-cli.ts overrated",
+// Wired into package.json:
+//   "perf:correlate":  "tsx src/perf-cli.ts correlate",
+//   "perf:overrated":  "tsx src/perf-cli.ts overrated",
 //   "perf:underrated": "tsx src/perf-cli.ts underrated",
-//   "perf:import": "tsx src/perf-cli.ts import"
+//   "perf:import":     "tsx src/perf-import.ts"  (import lives in perf-import.ts)
 
 import "dotenv/config";
-import { PerformanceDB, importMetaCsv } from "./performance.js";
+import { PerformanceDB, PerformanceMetric } from "./performance.js";
 
 const DB_PATH = process.env.DB_PATH || "./data/scores.db";
+const VALID_METRICS: PerformanceMetric[] = ["ctr", "cvr", "cac_usd", "cpc_usd"];
+
+function parseMetric(raw: string | undefined, fallback: PerformanceMetric): PerformanceMetric {
+  if (!raw) return fallback;
+  if ((VALID_METRICS as string[]).includes(raw)) return raw as PerformanceMetric;
+  console.error(`✗ Unknown metric "${raw}". Use one of: ${VALID_METRICS.join(", ")}`);
+  process.exit(1);
+}
 
 function cmdCorrelate(args: string[]) {
-  const metric = (args[0] || "ctr") as "ctr" | "cvr" | "cac_usd" | "cpc_usd";
+  const metric = parseMetric(args[0], "ctr");
   const db = new PerformanceDB(DB_PATH);
   const results = db.correlateRubricWithMetric(metric);
 
@@ -38,46 +46,42 @@ function cmdCorrelate(args: string[]) {
   }
 
   console.log(`\nInterpretation:`);
-  console.log(`- Dimensions with HIGH +correlation predict ${metric} — keep weighting them in rubric`);
-  console.log(`- Dimensions near 0 are NOT predictive — consider removing or rewriting`);
-  console.log(`- Dimensions with NEGATIVE correlation are MISCALIBRATED — your rubric punishes things the market rewards\n`);
+  console.log(`- HIGH +correlation predicts ${metric} — keep weighting in rubric`);
+  console.log(`- Near 0 = NOT predictive — consider removing or rewriting`);
+  console.log(`- NEGATIVE = MISCALIBRATED — rubric punishes what the market rewards\n`);
 
   db.close();
 }
 
 function cmdOverrated(args: string[]) {
-  const metric = (args[0] || "ctr") as "ctr" | "cvr";
+  const metricRaw = parseMetric(args[0], "ctr");
+  if (metricRaw !== "ctr" && metricRaw !== "cvr") {
+    console.error(`✗ overrated/underrated only supports ctr or cvr (got ${metricRaw})`);
+    process.exit(1);
+  }
   const db = new PerformanceDB(DB_PATH);
-  const rows = db.findOverratedAds(metric);
-  console.log(`\nAds where scorer rated HIGH but ${metric.toUpperCase()} is LOW (overfit / blind spot):\n`);
+  const rows = db.findOverratedAds(metricRaw);
+  console.log(`\nAds where scorer rated HIGH but ${metricRaw.toUpperCase()} is LOW (overfit / blind spot):\n`);
   for (const r of rows) {
-    console.log(`  ${r.total}/40 [${r.verdict}] ${metric}=${r.metric_value.toFixed(4)}  ${r.filename}`);
+    console.log(`  ${r.total}/40 [${r.verdict}] ${metricRaw}=${r.metric_value.toFixed(4)}  ${r.filename}`);
   }
   console.log(`\nThese ads suggest the rubric overweights design qualities the market doesn't reward.`);
   db.close();
 }
 
 function cmdUnderrated(args: string[]) {
-  const metric = (args[0] || "ctr") as "ctr" | "cvr";
-  const db = new PerformanceDB(DB_PATH);
-  const rows = db.findUnderratedAds(metric);
-  console.log(`\nAds where scorer rated LOW but ${metric.toUpperCase()} is HIGH (rubric blind spot):\n`);
-  for (const r of rows) {
-    console.log(`  ${r.total}/40 [${r.verdict}] ${metric}=${r.metric_value.toFixed(4)}  ${r.filename}`);
-  }
-  console.log(`\nThese are the most important rows — review what the rubric missed.`);
-  db.close();
-}
-
-function cmdImport(args: string[]) {
-  const csvPath = args[0];
-  if (!csvPath) {
-    console.error("Usage: perf:import <csv-path>");
+  const metricRaw = parseMetric(args[0], "ctr");
+  if (metricRaw !== "ctr" && metricRaw !== "cvr") {
+    console.error(`✗ overrated/underrated only supports ctr or cvr (got ${metricRaw})`);
     process.exit(1);
   }
   const db = new PerformanceDB(DB_PATH);
-  const result = importMetaCsv(csvPath, db);
-  console.log(`Imported ${result.inserted}, skipped ${result.skipped}`);
+  const rows = db.findUnderratedAds(metricRaw);
+  console.log(`\nAds where scorer rated LOW but ${metricRaw.toUpperCase()} is HIGH (rubric blind spot):\n`);
+  for (const r of rows) {
+    console.log(`  ${r.total}/40 [${r.verdict}] ${metricRaw}=${r.metric_value.toFixed(4)}  ${r.filename}`);
+  }
+  console.log(`\nThese are the most important rows — review what the rubric missed.`);
   db.close();
 }
 
@@ -86,13 +90,12 @@ switch (cmd) {
   case "correlate": cmdCorrelate(args); break;
   case "overrated": cmdOverrated(args); break;
   case "underrated": cmdUnderrated(args); break;
-  case "import": cmdImport(args); break;
   default:
     console.log(`
 Usage:
-  perf:import <csv>           Import Meta/TikTok CSV export
-  perf:correlate [metric]     Correlate rubric dimensions vs metric (ctr|cvr|cac_usd|cpc_usd)
-  perf:overrated [metric]     Show ads scorer overrated relative to performance
-  perf:underrated [metric]    Show ads scorer underrated (rubric blind spots)
+  npm run perf:import <csv>           Import Meta/TikTok CSV export (see src/perf-import.ts)
+  npm run perf:correlate [metric]     Correlate rubric dimensions vs metric (ctr|cvr|cac_usd|cpc_usd)
+  npm run perf:overrated [metric]     Show ads scorer overrated relative to performance (ctr|cvr)
+  npm run perf:underrated [metric]    Show ads scorer underrated (rubric blind spots) (ctr|cvr)
 `);
 }

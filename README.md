@@ -43,6 +43,10 @@ npm run keywords 30
 | `npm run stats` | Aggregate statistics + dimension averages |
 | `npm run keywords [N]` | Top N keyword phrases to emphasize / remove |
 | `npm run export` | Export all scores to CSV (`./reports/scores.csv`) |
+| `npm run perf:import <csv>` | Import Meta/TikTok performance CSV; joins on filename. |
+| `npm run perf:correlate [metric]` | Pearson correlation: rubric dimensions vs `ctr` (default) / `cvr` / `cac_usd` / `cpc_usd`. Operates on aggregated multi-shot batch scores. |
+| `npm run perf:overrated [metric]` | Ads scorer rated high but CTR/CVR is low (rubric overfit). |
+| `npm run perf:underrated [metric]` | Ads scorer rated low but CTR/CVR is high (rubric blind spots — the most actionable bucket). |
 
 ## The feedback loop
 
@@ -116,9 +120,29 @@ CREATE TABLE scores (
 
 Connect any BI tool (Metabase, Grafana, your finance dashboard) to `data/scores.db` for custom dashboards.
 
+## Performance correlation
+
+Once a Meta/TikTok campaign closes, tie rubric scores back to actual CTR/CVR/CAC to validate which dimensions predict ROI:
+
+```bash
+# Export weekly performance as CSV with these columns:
+#   ad_filename, external_ad_id, platform, date_start, date_end,
+#   impressions, clicks, spend_usd, conversions   (+ optional: notes)
+npm run perf:import ./data/performance/2026-05-week1.csv
+
+# Pearson r per rubric dimension vs the metric. Uses aggregated (median)
+# multi-shot scores — same numbers winners/losers/reports operate on.
+npm run perf:correlate ctr        # or cvr | cac_usd | cpc_usd
+
+# Diagnostic — rubric blind spots
+npm run perf:overrated ctr        # scorer rated high, CTR low → rubric overfits design taste
+npm run perf:underrated ctr       # scorer rated low,  CTR high → MOST actionable
+```
+
+Read the `--strong` rows as validated dimensions; revise/remove dimensions whose r ≈ 0; re-examine the rubric for any dimension whose correlation goes negative.
+
 ## Next steps to consider
 
-- **Tie scores to actual CTR/CVR** — add a `performance` table that joins ad_id → CTR/CVR/CAC from your ad platform. Run correlation between rubric dimensions and actual performance to validate which dimensions predict ROI.
 - **Side-by-side A/B prompt testing** — generate the same ad concept with `keywords_emphasize` baseline vs. updated version, compare scores.
 - **Slack/Lark notification** — post daily summary of winners + IP risks to your team channel.
 - **Mobile review interface** — small Express app for reviewing borderline candidates on phone (you already have the dashboard pattern for this).

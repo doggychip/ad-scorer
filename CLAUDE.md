@@ -86,9 +86,26 @@ open ./reports/report-$(date +%Y-%m-%d).html
 ```
 
 ### After a Meta/TikTok campaign closes (when CTR/CVR data comes in)
-Compare scorer ratings vs actual performance. Look for:
+```bash
+# 1. Export weekly performance from Meta/TikTok Ads Manager as CSV with columns:
+#    ad_filename, external_ad_id, platform, date_start, date_end,
+#    impressions, clicks, spend_usd, conversions  [+ optional: notes]
+# 2. Import — joins to scores by filename → canonical batch row
+npm run perf:import ./data/performance/2026-05-week1.csv
+
+# 3. Pearson correlation between rubric dimensions and the metric.
+#    Operates on aggregated (median) batch scores — same as winners/losers/reports.
+npm run perf:correlate ctr      # or cvr | cac_usd | cpc_usd
+
+# 4. Diagnostic buckets — rubric blind spots
+npm run perf:overrated ctr      # scorer high, CTR low → rubric overweights design polish
+npm run perf:underrated ctr     # scorer low,  CTR high → rubric blind spot, MOST actionable
+```
+
+Look for:
 - Dimensions where our rubric correlates with CTR (these dimensions are validated)
 - Dimensions where it doesn't (these need rubric revision)
+- Underrated ads — these are the strongest signal that the rubric missed something the market rewards
 
 ### Competitor benchmarking
 Drop competitor ads into `./competitors/{brand}/`, score with same rubric, compare dimension averages. Look for:
@@ -107,10 +124,13 @@ Drop competitor ads into `./competitors/{brand}/`, score with same rubric, compa
 
 ## What's NOT in this project (yet)
 
-- Performance correlation (CTR/CVR data join with scores) — planned, not built
 - Competitor benchmark mode — planned, not built
 - Storyboard / video shot list generation — planned, not built
 - Lark/Slack daily digest notifications — planned, not built
+
+## Recently shipped
+
+- **Performance correlation** (`npm run perf:import` / `perf:correlate` / `perf:overrated` / `perf:underrated`) — joins ad platform CTR/CVR/CAC/CPC to aggregated multi-shot rubric scores; Pearson r per dimension validates which dimensions actually predict ROI. See `src/performance.ts` and `tests/performance.test.ts`.
 
 ## Subagents available
 
