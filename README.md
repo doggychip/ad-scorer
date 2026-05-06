@@ -43,6 +43,8 @@ npm run keywords 30
 | `npm run stats` | Aggregate statistics + dimension averages |
 | `npm run keywords [N]` | Top N keyword phrases to emphasize / remove |
 | `npm run export` | Export all scores to CSV (`./reports/scores.csv`) |
+| `npm run ab:gen --concept <slug> --brief "..." --keywords-b "..."` | Generate A/B prompt variants (control vs keyword override). Writes `prompts/ab/<slug>-<date>/{A.md,B.md,MANIFEST.md}`. |
+| `npm run ab:compare <parent-folder>` | Compare scored A/ and B/ subfolders: per-dim Δ, total Δ, SE-of-difference, underpower warning. |
 
 ## The feedback loop
 
@@ -116,9 +118,25 @@ CREATE TABLE scores (
 
 Connect any BI tool (Metabase, Grafana, your finance dashboard) to `data/scores.db` for custom dashboards.
 
+## A/B prompt testing
+
+Test whether a keyword pivot actually moves rubric scores before adopting it as the new default:
+
+```bash
+# Variant A = current DB-derived KEEP keywords (control)
+# Variant B = explicit emphasize override
+npm run ab:gen --concept "single-character-pov" \
+  --brief "lead with brand memorability hook" \
+  --keywords-b "single character POV, cinematic night lighting, calm gaze" \
+  --n 5
+
+# After pasting prompts into Imagen and scoring both folders:
+npm run ab:compare creatives/ab/single-character-pov/2026-05-06/
+```
+
+Output reports per-dimension Δ (B − A) on aggregated multi-shot scores plus an "n<10" caveat or a "within run-to-run noise" note when |Δ_total| is below the standard error of the difference. The brief is held constant; the only deliberate variation is the keyword set the prompt generator sees.
+
 ## Next steps to consider
 
-- **Tie scores to actual CTR/CVR** — add a `performance` table that joins ad_id → CTR/CVR/CAC from your ad platform. Run correlation between rubric dimensions and actual performance to validate which dimensions predict ROI.
-- **Side-by-side A/B prompt testing** — generate the same ad concept with `keywords_emphasize` baseline vs. updated version, compare scores.
 - **Slack/Lark notification** — post daily summary of winners + IP risks to your team channel.
 - **Mobile review interface** — small Express app for reviewing borderline candidates on phone (you already have the dashboard pattern for this).

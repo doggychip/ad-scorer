@@ -26,9 +26,16 @@ interface NextPromptsOpts {
   dbPath: string;
   brandDnaPath: string;
   outputDir: string;
+  /** Optional: replace the DB-derived emphasize keywords entirely. Used by ab.ts. */
+  positivesOverride?: { keyword: string; net: number }[];
+  /** Optional: replace the DB-derived remove keywords entirely. Used by ab.ts. */
+  negativesOverride?: { keyword: string; net: number }[];
+  /** Optional: file name within outputDir (default: <YYYY-MM-DD>.md). Used by
+   *  ab.ts to write A.md / B.md side by side. */
+  outputFilename?: string;
 }
 
-interface ContextSummary {
+export interface ContextSummary {
   winnerCount: number;
   loserCount: number;
   positiveKeywords: number;
@@ -36,23 +43,23 @@ interface ContextSummary {
   totalBatches: number;
 }
 
-export async function generateNextPrompts(opts: NextPromptsOpts): Promise<{
-  prompts: string[];
-  outputPath: string;
-  context: ContextSummary;
-}> {
-  // Load brand DNA
-  if (!fs.existsSync(opts.brandDnaPath)) {
-    throw new Error(`brand-dna not found at ${opts.brandDnaPath}`);
-  }
-  const brandDna = fs.readFileSync(opts.brandDnaPath, "utf-8");
+export interface RecentContext {
+  winners: AggregatedRecord[];
+  losers: AggregatedRecord[];
+  positives: { keyword: string; net: number }[];
+  negatives: { keyword: string; net: number }[];
+  totalBatches: number;
+}
 
-  // Pull aggregated records, filter by date
-  const db = new ScoreDB(opts.dbPath);
+/** Pure helper: read scoredb, filter to last N days, derive keyword lists.
+ *  Exported so ab.ts can build its baseline (variant A) from the same data
+ *  next-prompts uses, then construct variant B by swapping just `positives`. */
+export function loadRecentContext(dbPath: string, days: number): RecentContext {
+  const db = new ScoreDB(dbPath);
   const allRecords = db.getAggregatedRecords();
   db.close();
 
-  const cutoff = new Date(Date.now() - opts.days * 24 * 60 * 60 * 1000);
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
   const recentRecords = allRecords.filter((r) => {
     if (!r.scored_at) return false;
     const t = new Date(r.scored_at);
@@ -62,7 +69,6 @@ export async function generateNextPrompts(opts: NextPromptsOpts): Promise<{
   const winners = recentRecords.filter((r) => r.result.verdict === "winner");
   const losers = recentRecords.filter((r) => r.result.verdict === "reject");
 
-  // Local per-batch keyword aggregation over the same date window
   const kwMap = new Map<string, { emp: number; rem: number }>();
   for (const r of recentRecords) {
     const emp = r.result.suggested_keywords_to_emphasize;
@@ -86,18 +92,36 @@ export async function generateNextPrompts(opts: NextPromptsOpts): Promise<{
     .sort((a, b) => a.net - b.net)
     .slice(0, 10);
 
+  return { winners, losers, positives, negatives, totalBatches: recentRecords.length };
+}
+
+export async function generateNextPrompts(opts: NextPromptsOpts): Promise<{
+  prompts: string[];
+  outputPath: string;
+  context: ContextSummary;
+}> {
+  // Load brand DNA
+  if (!fs.existsSync(opts.brandDnaPath)) {
+    throw new Error(`brand-dna not found at ${opts.brandDnaPath}`);
+  }
+  const brandDna = fs.readFileSync(opts.brandDnaPath, "utf-8");
+
+  const recent = loadRecentContext(opts.dbPath, opts.days);
+  const positives = opts.positivesOverride ?? recent.positives;
+  const negatives = opts.negativesOverride ?? recent.negatives;
+
   const context: ContextSummary = {
-    winnerCount: winners.length,
-    loserCount: losers.length,
+    winnerCount: recent.winners.length,
+    loserCount: recent.losers.length,
     positiveKeywords: positives.length,
     negativeKeywords: negatives.length,
-    totalBatches: recentRecords.length,
+    totalBatches: recent.totalBatches,
   };
 
   const userMessage = buildUserMessage({
     brandDna,
-    winners,
-    losers,
+    winners: recent.winners,
+    losers: recent.losers,
     positives,
     negatives,
     days: opts.days,
@@ -125,7 +149,8 @@ export async function generateNextPrompts(opts: NextPromptsOpts): Promise<{
   // Write markdown archive
   const dateStr = new Date().toISOString().slice(0, 10);
   fs.mkdirSync(opts.outputDir, { recursive: true });
-  const outputPath = path.join(opts.outputDir, `${dateStr}.md`);
+  const fname = opts.outputFilename ?? `${dateStr}.md`;
+  const outputPath = path.join(opts.outputDir, fname);
   fs.writeFileSync(outputPath, renderMarkdown({ prompts, context, opts, dateStr }), "utf-8");
 
   return { prompts, outputPath, context };

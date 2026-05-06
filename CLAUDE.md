@@ -90,6 +90,30 @@ Compare scorer ratings vs actual performance. Look for:
 - Dimensions where our rubric correlates with CTR (these dimensions are validated)
 - Dimensions where it doesn't (these need rubric revision)
 
+### A/B testing a keyword pivot before adopting it
+When `creative-feedback.md` suggests a different KEEP set, or you're considering manually
+pinning new emphasize keywords, test the change before rolling it into the daily loop:
+```bash
+# 1. Generate the same brief twice — A uses the current DB feedback (control),
+#    B uses the explicit override list under test.
+npm run ab:gen --concept "single-character-pov" \
+  --brief "lead with brand memorability hook" \
+  --keywords-b "single character POV, cinematic night lighting, calm gaze" \
+  --n 5
+
+# 2. Paste prompts/ab/<slug>-<date>/A.md and B.md into Imagen separately,
+#    drop outputs into creatives/ab/<slug>/<date>/A/ and .../B/.
+
+# 3. Score each variant.
+npm run score creatives/ab/single-character-pov/$(date +%Y-%m-%d)/A/
+npm run score creatives/ab/single-character-pov/$(date +%Y-%m-%d)/B/
+
+# 4. Compare aggregated rubric scores (per-dim Δ + total Δ + SE).
+npm run ab:compare creatives/ab/single-character-pov/$(date +%Y-%m-%d)/
+```
+Caveat: rubric agreement, not market response. If a variant wins on rubric, follow up by
+running it through `perf:correlate` after the campaign closes to validate against CTR/CVR.
+
 ### Competitor benchmarking
 Drop competitor ads into `./competitors/{brand}/`, score with same rubric, compare dimension averages. Look for:
 - Where we systematically underperform vs winning competitors

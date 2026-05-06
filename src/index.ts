@@ -348,6 +348,98 @@ async function cmdNextPrompts(args: string[]) {
   console.log(`Paste any of the above into Gemini Imagen or ChatGPT Image 2.0 as-is.`);
 }
 
+async function cmdAbGen(args: string[]) {
+  const conceptIdx = args.indexOf("--concept");
+  const concept = conceptIdx >= 0 ? args[conceptIdx + 1] : undefined;
+  if (!concept) {
+    console.error(`✗ ab:gen requires --concept <slug> (lowercase a-z0-9-)`);
+    process.exit(1);
+  }
+  const briefIdx = args.indexOf("--brief");
+  const brief = briefIdx >= 0 ? args[briefIdx + 1] : undefined;
+  if (!brief) {
+    console.error(`✗ ab:gen requires --brief "..." (held constant across A and B)`);
+    process.exit(1);
+  }
+  const kbIdx = args.indexOf("--keywords-b");
+  const keywordsBRaw = kbIdx >= 0 ? args[kbIdx + 1] : undefined;
+  if (!keywordsBRaw) {
+    console.error(`✗ ab:gen requires --keywords-b "kw1, kw2, ..." (variant B's emphasize override)`);
+    process.exit(1);
+  }
+  const keywordsB = keywordsBRaw.split(",").map((s) => s.trim()).filter(Boolean);
+  if (keywordsB.length === 0) {
+    console.error(`✗ --keywords-b parsed to empty list`);
+    process.exit(1);
+  }
+
+  const krIdx = args.indexOf("--remove-b");
+  const removeBRaw = krIdx >= 0 ? args[krIdx + 1] : undefined;
+  const removeB = removeBRaw
+    ? removeBRaw.split(",").map((s) => s.trim()).filter(Boolean)
+    : undefined;
+
+  const nIdx = args.indexOf("--n");
+  const n = nIdx >= 0 ? parseInt(args[nIdx + 1], 10) : 5;
+  if (!Number.isInteger(n) || n < 1 || n > 20) {
+    console.error(`✗ Invalid --n "${args[nIdx + 1]}". Use an integer 1-20.`);
+    process.exit(1);
+  }
+  const daysIdx = args.indexOf("--days");
+  const days = daysIdx >= 0 ? parseInt(args[daysIdx + 1], 10) : 7;
+  if (!Number.isInteger(days) || days < 1 || days > 365) {
+    console.error(`✗ Invalid --days "${args[daysIdx + 1]}". Use an integer 1-365.`);
+    process.exit(1);
+  }
+
+  const { generateAbPrompts } = await import("./ab.js");
+  process.stdout.write(`Generating A/B prompts for "${concept}" (n=${n} per variant) ... `);
+  const result = await generateAbPrompts({
+    brief,
+    conceptSlug: concept,
+    n,
+    days,
+    emphasizeOverrideB: keywordsB,
+    removeOverrideB: removeB,
+    apiKey: getApiKey(),
+    model: process.env.PROMPT_GEN_MODEL || "claude-sonnet-4-6",
+    dbPath: DEFAULT_DB_PATH,
+    brandDnaPath: process.env.BRAND_DNA_PATH || "./brand-dna.json",
+    outputBaseDir: "./prompts/ab",
+  });
+  process.stdout.write("done.\n\n");
+  console.log(`Output dir: ${result.outputDir}`);
+  console.log(`  A: ${result.variantA.outputPath}`);
+  console.log(`  B: ${result.variantB.outputPath}`);
+  console.log(`  manifest: ${result.manifestPath}\n`);
+  console.log(
+    `Next: paste each variant into Imagen, drop outputs into creatives/ab/${concept}/$(date +%Y-%m-%d)/{A,B}/, then:`
+  );
+  console.log(`  npm run score creatives/ab/${concept}/$(date +%Y-%m-%d)/A/`);
+  console.log(`  npm run score creatives/ab/${concept}/$(date +%Y-%m-%d)/B/`);
+  console.log(`  npm run ab:compare creatives/ab/${concept}/$(date +%Y-%m-%d)/`);
+}
+
+async function cmdAbCompare(args: string[]) {
+  const folder = args[0];
+  if (!folder) {
+    console.error(
+      `Usage: npm run ab:compare <parent-folder>\n  parent-folder must contain A/ and B/ subdirs of scored images`
+    );
+    process.exit(1);
+  }
+  const { loadAbVariants, compareAbBatches, formatComparison } = await import("./ab.js");
+  const { recordsA, recordsB } = loadAbVariants(DEFAULT_DB_PATH, folder);
+  if (recordsA.length === 0 && recordsB.length === 0) {
+    console.error(
+      `✗ No scored records under ${folder}/A/ or ${folder}/B/. Did you run npm run score on each variant first?`
+    );
+    process.exit(1);
+  }
+  const cmp = compareAbBatches(recordsA, recordsB);
+  console.log(formatComparison(cmp, folder));
+}
+
 async function cmdExport(args: string[]) {
   const outArg = args.find((a) => a.startsWith("--out="));
   const outPath = outArg ? outArg.replace("--out=", "") : `./reports/scores.csv`;
@@ -450,6 +542,23 @@ USAGE:
       --days D     historical window in days (default 7, max 365)
       --brief      hard creative requirement — every prompt MUST address this
 
+  npm run ab:gen --concept <slug> --brief "..." --keywords-b "kw1, kw2, ..."
+                 [--remove-b "..."] [--n N] [--days D]
+      Generate A/B prompt variants. Same brief, same brand-dna; variant A uses
+      the DB's current KEEP keyword digest (the control), variant B uses the
+      override list passed via --keywords-b. Writes prompts/ab/<slug>-<date>/
+      {A.md, B.md, MANIFEST.md}. Use to test whether a keyword pivot moves
+      rubric scores before adopting it as the new default.
+      --concept   lowercase a-z0-9- slug (used in folder names)
+      --brief     hard creative requirement, held constant across A and B
+      --keywords-b  comma-separated emphasize override for variant B
+      --remove-b    optional comma-separated remove override for B (default: same as A)
+
+  npm run ab:compare <parent-folder>
+      After scoring both variants under <parent>/A/ and <parent>/B/, print the
+      per-dimension delta and a directional/significant indicator. Operates on
+      aggregated multi-shot records — same numbers reports/winners use.
+
 EXAMPLES:
   npm run score ./creatives/2026-04-29/
   npm run score ./creatives/draft-v3.png --force
@@ -492,6 +601,12 @@ async function main() {
       break;
     case "feedback":
       await cmdFeedback(args);
+      break;
+    case "ab:gen":
+      await cmdAbGen(args);
+      break;
+    case "ab:compare":
+      await cmdAbCompare(args);
       break;
     case "help":
     case "--help":
