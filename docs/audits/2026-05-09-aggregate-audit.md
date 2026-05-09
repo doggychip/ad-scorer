@@ -41,3 +41,31 @@ this is not the case before running git operations from session that
 might cd up. Marker for next session: 
 - Run `ls -la ~/.git` first
 - If exists, investigate what it tracks before any git commands
+
+## Next session protocol (2026-05-10)
+
+Steps 1-4 are zero-risk read-only verification. Code changes start at step 5.
+
+```bash
+# 1. Confirm working directory and repo
+cd ~/projects/ad-scorer && pwd && git rev-parse --show-toplevel
+# Must return /Users/rcheung/projects/ad-scorer — if not, STOP
+
+# 2. Verify home is not a git repo
+ls -la ~/.git
+# If exists, investigate before any git commands
+
+# 3. Read this audit file to pick up M1-M7 state
+# docs/audits/2026-05-09-aggregate-audit.md
+
+# 4. Grep to verify findings still hold in current code
+grep -n "correlateRubricWithMetric\|findOverratedAds\|getStats\|getTopN" src/
+
+# 5. Begin M1-M7 fixes (session confirmed clean at this point)
+```
+
+### Fix order when ready
+- M1, M2 first — CRITICAL, wrong aggregation semantics
+- M3, M4, M5 — DELETE dead methods
+- M6 — JSDoc warning only, no logic change
+- M7 — SQL comment in schema only
