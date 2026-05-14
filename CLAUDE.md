@@ -35,7 +35,7 @@ brand-dna.json (single source of truth)
 - `brand-dna.md` — rationale companion for `brand-dna.json`. Read this before suggesting any DNA change.
 - `creative-feedback.md` — **auto-generated** from `data/scores.db` via `npm run feedback`. Soft preferences (KEEP/AVOID keywords + dimension trends) learned from the last 7 days. NOT hand-edited; it's a build artifact.
 - `src/rubric.ts` — the scorer's system prompt. The single most important tunable in the project.
-- `src/scorer.ts` — Claude vision API wrapper. Uses JSON prefill (`{`) to lock structured output.
+- `src/scorer.ts` — Claude vision API wrapper. Uses tool-use forced structured output: declares `SCORE_AD_TOOL` and pins responses via `tool_choice: { type: "tool", name: "score_ad" }`. The schema is the wire-level contract for every `ScoreResult` field. See `docs/audits/2026-05-13-tool-use-migration.md`.
 - `src/db.ts` — SQLite schema + keyword aggregation queries.
 - `data/scores.db` — historical scores. Don't delete; this is the learning corpus.
 

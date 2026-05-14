@@ -204,27 +204,7 @@ CRITICAL: keep phrases SHORT and ATOMIC. Do NOT generate long compound phrases l
 
 These get fed back into the auto-generation pipeline as positive/negative prompt seeds. Be specific and actionable.
 
-# Output format
+# Output
 
-Output ONLY valid JSON, no markdown fences, no preamble. Exact schema:
-
-{
-  "scores": {
-    "focal_point": <0-5>,
-    "information_density": <0-5>,
-    "information_hierarchy": <0-5>,
-    "brand_consistency": <0-5>,
-    "differentiation": <0-5>,
-    "emotional_tone": <0-5>,
-    "cta_clarity": <0-5>,
-    "anti_ai_feel": <0-5>
-  },
-  "total": <sum, computed>,
-  "winning_hypothesis": "<1-2 sentence diagnosis of why this works, or 'none — fundamental rework needed' if it doesn't>",
-  "failure_modes": ["<specific issue>", "<specific issue>"],
-  "suggested_keywords_to_emphasize": ["<short phrase>", "<short phrase>"],
-  "suggested_keywords_to_remove": ["<short phrase>", "<short phrase>"],
-  "ip_or_legal_risk": <null OR "specific description">,
-  "verdict": "winner" | "candidate" | "reject"
-}`;
+Record your evaluation by calling the score_ad tool. Do not add prose before or after the tool call.`;
 }
